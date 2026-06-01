@@ -9,6 +9,9 @@ leads they can call directly versus which ones to visit in person.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
+
+STALE_DAYS = 45
 
 # US/Canada toll-free area codes: a number on one of these never reaches a
 # local manager -- it's corporate customer service.
@@ -43,6 +46,66 @@ def chain_from_tags(tags: dict) -> tuple[str, int]:
     brand = (tags.get("brand") or tags.get("operator") or "").strip()
     is_chain = 1 if (tags.get("brand") or tags.get("brand:wikidata")) else 0
     return brand, is_chain
+
+
+def confidence(lead, now: datetime | None = None) -> dict:
+    """How likely a lead is to be *real and reachable* (distinct from its
+    job-value score). Shown BEFORE a contractor unlocks it, so they know what
+    they're paying for. Returns {'score', 'label', 'reasons'}.
+
+    ``lead`` is any mapping with the lead columns (sqlite Row or dict).
+    """
+    now = now or datetime.now(timezone.utc)
+    pts = 10  # baseline: a real, categorized business we recently scanned
+    reasons: list[str] = []
+
+    phone_type = _get(lead, "phone_type") or ""
+    if phone_type == "direct":
+        pts += 35
+        reasons.append("Direct local phone line")
+    elif _get(lead, "phone"):
+        pts += 12
+        reasons.append("Phone on file")
+    if _get(lead, "email"):
+        pts += 15
+        reasons.append("Email on file")
+    if _get(lead, "address"):
+        pts += 15
+        reasons.append("Street address known")
+    if _get(lead, "website"):
+        pts += 10
+        reasons.append("Website on file")
+    if not _get(lead, "is_chain"):
+        pts += 10
+        reasons.append("Independent — owner/manager reachable")
+    else:
+        reasons.append("Chain — decision often made off-site")
+
+    last_seen = _get(lead, "last_seen")
+    if last_seen:
+        cutoff = (now - timedelta(days=STALE_DAYS)).isoformat(timespec="seconds")
+        if last_seen < cutoff:
+            pts -= 15
+            reasons.append("Not seen recently — may be stale")
+        else:
+            reasons.append("Recently confirmed active")
+
+    bad = _get(lead, "bad_reports") or 0
+    if bad:
+        pts -= min(bad, 3) * 15
+        reasons.append(f"{bad} contractor(s) reported issues")
+
+    score = max(0, min(100, pts))
+    label = "High" if score >= 70 else "Medium" if score >= 45 else "Low"
+    return {"score": score, "label": label, "reasons": reasons}
+
+
+def _get(lead, key):
+    """Read a key from a sqlite Row or dict, tolerating missing columns."""
+    try:
+        return lead[key]
+    except (KeyError, IndexError):
+        return None
 
 
 # How to act on each combination, shown to contractors as guidance.

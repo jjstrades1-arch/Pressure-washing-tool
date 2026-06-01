@@ -18,7 +18,7 @@ import math
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-from . import db
+from . import db, quality
 
 EARTH_KM = 6371.0088
 # How long an actively-worked shared lead stays reserved for one contractor.
@@ -110,6 +110,7 @@ def candidate_leads(conn: sqlite3.Connection, contractor_id: int) -> list[dict]:
             item["is_new"] = bool(prev_login and row["first_seen"]
                                   and row["first_seen"] > prev_login)
             item["revealed"] = lead_id in revealed
+            item["confidence"] = quality.confidence(row)
             chosen[lead_id] = item
 
     leads = sorted(
@@ -141,10 +142,10 @@ def reveal_lead(conn: sqlite3.Connection, contractor_id: int, lead_id: int) -> s
     if sub is None or get_candidate(conn, contractor_id, lead_id) is None:
         return "invalid"
     period_start = sub["current_period_start"]
-    revealed = db.revealed_lead_ids(conn, contractor_id, period_start)
-    if lead_id in revealed:
+    # Revisiting an already-unlocked lead never re-charges, even after a refund.
+    if db.has_reveal(conn, contractor_id, lead_id, period_start):
         return "already"
-    if len(revealed) >= sub["monthly_lead_cap"]:
+    if db.reveal_count(conn, contractor_id, period_start) >= sub["monthly_lead_cap"]:
         return "limit"
     db.add_reveal(conn, contractor_id, lead_id, period_start)
     return "ok"

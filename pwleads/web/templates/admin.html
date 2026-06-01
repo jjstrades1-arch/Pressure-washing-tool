@@ -4,6 +4,22 @@
 <h1>Owner admin</h1>
 <p class="note">{{ contractors }} contractor(s) · {{ total }} active lead(s) in inventory</p>
 
+{% if reviews %}
+<section class="panel">
+  <h2>Bad-lead reports to review ({{ reviews | length }})</h2>
+  <p class="note">These hit a contractor's monthly auto-refund cap, so they need a look.</p>
+  <table class="leads">
+    <thead><tr><th>Business</th><th>Lead</th><th>Reason</th><th>When</th></tr></thead>
+    <tbody>
+      {% for r in reviews %}
+        <tr><td>{{ r['business_name'] }}</td><td>{{ r['lead_name'] }}</td>
+            <td>{{ r['reason'] }}</td><td>{{ r['created_at'] }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 <section class="panel">
   <h2>Refresh leads</h2>
   <p>Re-scan every subscribed service area and enrich missing contact info.</p>

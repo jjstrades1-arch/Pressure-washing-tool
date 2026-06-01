@@ -134,6 +134,26 @@ areas** and **Enrich**. Subscribers immediately see ranked leads on their dashbo
 | Pro | $99/mo | 12 km | 2 | 60+ | 100 | shared |
 | Metro | $199/mo | 16 km | 3 | all | 400 | exclusive |
 
+### Trust: confidence scores + a credit-back guarantee
+
+Two signals tell a contractor whether a lead is worth paying for *before* they
+unlock it, and protect them if it isn't:
+
+- **Confidence score** (separate from the job-value score) rates how likely a
+  lead is *real and reachable* — based on having a direct local phone, email,
+  full address, website, recency, and independent-vs-chain. Shown as
+  High/Medium/Low on every lead.
+- **Credit-back guarantee** refunds the unlock for a genuinely bad lead (dead
+  number, closed business, duplicate, wrong data). It is *not* a refund for a
+  lost job, and it can't be gamed:
+  - only objective defect reasons are accepted;
+  - a lead the contractor marked contacted/quoted/**won** is blocked (you can't
+    claim a lead was unreachable when your own pipeline says you reached it);
+  - reports must come within a few days of unlocking;
+  - refunds return a credit, not cash;
+  - heavy reporters trip a per-period cap and go to owner review;
+  - a lead two contractors flag is automatically pulled from circulation.
+
 ### What a subscriber experiences
 
 - **Instant leads.** Adding a service area kicks off a background scan (free

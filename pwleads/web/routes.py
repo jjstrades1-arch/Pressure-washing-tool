@@ -12,8 +12,8 @@ from flask import (
 )
 
 from .. import (
-    auth, billing, db, entitlements, enrich, export, outreach, quality,
-    scan, scoring, sources,
+    auth, billing, db, entitlements, enrich, export, guarantee, outreach,
+    quality, scan, scoring, sources,
 )
 
 bp = Blueprint("main", __name__)
@@ -239,6 +239,7 @@ def lead_detail(lead_id):
         claim = db.get_claim(conn, lead_id, cid)
         contractor = db.get_contractor(conn, cid)
         used, cap = entitlements.reveal_usage(conn, cid)
+        report = db.get_report(conn, cid, lead_id)
     revealed = reveal_status in ("ok", "already")
     hint = quality.outreach_hint(lead["is_chain"], lead["phone_type"])
     company = contractor["business_name"]
@@ -246,7 +247,9 @@ def lead_detail(lead_id):
     email = outreach.email_template(lead["name"], lead["category"], company)
     return render_template(
         "lead.html", lead=lead, claim=claim, hint=hint, revealed=revealed,
-        used=used, cap=cap, script=script, email=email, statuses=scoring.STATUSES,
+        used=used, cap=cap, script=script, email=email,
+        confidence=quality.confidence(lead), report=report,
+        report_reasons=guarantee.REASONS, statuses=scoring.STATUSES,
     )
 
 
@@ -277,6 +280,32 @@ def update_claim(lead_id):
         )
     flash("Lead updated.", "ok")
     return redirect(request.referrer or url_for("main.dashboard"))
+
+
+_REPORT_MESSAGES = {
+    "refunded": ("Credited back — your unlock has been returned. Thanks for "
+                 "flagging it; we'll improve the data.", "ok"),
+    "review": ("Report received. You've reached this month's instant-refund "
+               "limit, so our team will review this one.", "ok"),
+    "blocked_worked": ("This lead is marked contacted/quoted/won in your "
+                       "pipeline, so it isn't eligible for a data refund.", "error"),
+    "blocked_window": (f"Bad-lead reports must be made within "
+                       f"{guarantee.REPORT_WINDOW_DAYS} days of unlocking.", "error"),
+    "already": ("You've already reported this lead.", "error"),
+    "invalid_reason": ("Please choose a valid reason.", "error"),
+    "invalid": ("You can only report a lead you've unlocked this period.", "error"),
+}
+
+
+@bp.route("/lead/<int:lead_id>/report", methods=["POST"])
+@login_required
+def report_lead(lead_id):
+    reason = request.form.get("reason", "")
+    with _db() as conn:
+        status = guarantee.report_bad_lead(conn, current_contractor_id(), lead_id, reason)
+    msg, category = _REPORT_MESSAGES.get(status, ("Something went wrong.", "error"))
+    flash(msg, category)
+    return redirect(url_for("main.dashboard"))
 
 
 @bp.route("/export.csv")
@@ -322,6 +351,7 @@ def admin_panel():
     with _db() as conn:
         scans = db.recent_scans(conn)
         areas = db.all_service_areas(conn)
+        reviews = db.pending_reports(conn)
         total = conn.execute(
             "SELECT COUNT(*) AS n FROM leads WHERE is_active = 1"
         ).fetchone()["n"]
@@ -329,7 +359,8 @@ def admin_panel():
             "SELECT COUNT(*) AS n FROM contractors"
         ).fetchone()["n"]
     return render_template(
-        "admin.html", scans=scans, areas=areas, total=total, contractors=contractors
+        "admin.html", scans=scans, areas=areas, reviews=reviews,
+        total=total, contractors=contractors,
     )
 
 

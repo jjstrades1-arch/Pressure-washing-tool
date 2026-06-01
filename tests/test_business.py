@@ -7,8 +7,11 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from datetime import datetime, timezone  # noqa: E402
+from unittest import mock  # noqa: E402
+
 from pwleads import (  # noqa: E402
-    auth, billing, db, entitlements, enrich, quality, scan, sources,
+    auth, billing, db, entitlements, enrich, guarantee, quality, scan, sources,
 )
 
 
@@ -305,6 +308,131 @@ class EnrichPipelineTests(FixtureMixin):
             db.upsert_prospects(c, [p], "Kent")
             # Has phone, email, address -> nothing to enrich.
             self.assertEqual(enrich.pending_leads(c, 10), [])
+
+
+class ConfidenceTests(unittest.TestCase):
+    def test_complete_independent_is_high(self):
+        now = datetime.now(timezone.utc)
+        lead = {
+            "phone_type": "direct", "phone": "(253) 555-1000",
+            "email": "a@b.com", "address": "1 Main St", "website": "http://x",
+            "is_chain": 0, "last_seen": now.isoformat(timespec="seconds"),
+            "bad_reports": 0,
+        }
+        c = quality.confidence(lead, now=now)
+        self.assertEqual(c["label"], "High")
+        self.assertGreaterEqual(c["score"], 70)
+
+    def test_sparse_chain_reported_is_low(self):
+        now = datetime.now(timezone.utc)
+        lead = {
+            "phone_type": "", "phone": "", "email": "", "address": "",
+            "website": "", "is_chain": 1, "last_seen": "2000-01-01T00:00:00+00:00",
+            "bad_reports": 2,
+        }
+        c = quality.confidence(lead, now=now)
+        self.assertEqual(c["label"], "Low")
+        self.assertLess(c["score"], 45)
+
+
+class GuaranteeTests(FixtureMixin):
+    def _setup(self, plan_id=2):
+        """Pro contractor in Kent with two scanned leads. Returns (cid, [ids])."""
+        with db.connect(self.path) as c:
+            db.seed_plans(c)
+            cid = auth.register(c, "Mike", "m@example.com", "secret123")
+            db.add_service_area(c, cid, "Kent", 47.38, -122.23, 8.0)
+            billing.get_billing().subscribe(c, cid, plan_id)
+            scan.scan_area(c, "Kent", 47.38, -122.23, 8.0, finder=fake_finder())
+            ids = [l["id"] for l in entitlements.candidate_leads(c, cid)]
+        return cid, ids
+
+    def test_refund_returns_the_credit(self):
+        cid, ids = self._setup()
+        with db.connect(self.path) as c:
+            entitlements.reveal_lead(c, cid, ids[0])
+            self.assertEqual(entitlements.reveal_usage(c, cid)[0], 1)
+            status = guarantee.report_bad_lead(c, cid, ids[0], "dead_phone")
+            self.assertEqual(status, "refunded")
+            # Slot returned: usage back to 0.
+            self.assertEqual(entitlements.reveal_usage(c, cid)[0], 0)
+            # Reporting again is rejected.
+            self.assertEqual(
+                guarantee.report_bad_lead(c, cid, ids[0], "dead_phone"), "already"
+            )
+
+    def test_cannot_refund_a_lead_you_worked(self):
+        cid, ids = self._setup()
+        with db.connect(self.path) as c:
+            entitlements.reveal_lead(c, cid, ids[0])
+            db.upsert_claim(c, ids[0], cid, status="won", job_value_cents=200000)
+            self.assertEqual(
+                guarantee.report_bad_lead(c, cid, ids[0], "closed"), "blocked_worked"
+            )
+
+    def test_cannot_report_unrevealed_lead(self):
+        cid, ids = self._setup()
+        with db.connect(self.path) as c:
+            self.assertEqual(
+                guarantee.report_bad_lead(c, cid, ids[0], "dead_phone"), "invalid"
+            )
+
+    def test_invalid_reason_rejected(self):
+        cid, ids = self._setup()
+        with db.connect(self.path) as c:
+            entitlements.reveal_lead(c, cid, ids[0])
+            self.assertEqual(
+                guarantee.report_bad_lead(c, cid, ids[0], "lost_the_bid"),
+                "invalid_reason",
+            )
+
+    def test_report_window_enforced(self):
+        cid, ids = self._setup()
+        with db.connect(self.path) as c:
+            entitlements.reveal_lead(c, cid, ids[0])
+            # Backdate the unlock well past the window.
+            c.execute(
+                "UPDATE reveals SET created_at = '2000-01-01T00:00:00+00:00' "
+                "WHERE contractor_id = ? AND lead_id = ?", (cid, ids[0]),
+            )
+            self.assertEqual(
+                guarantee.report_bad_lead(c, cid, ids[0], "dead_phone"),
+                "blocked_window",
+            )
+
+    def test_heavy_reporter_goes_to_review(self):
+        cid, ids = self._setup()
+        with db.connect(self.path) as c:
+            entitlements.reveal_lead(c, cid, ids[0])
+            entitlements.reveal_lead(c, cid, ids[1])
+            with mock.patch.object(guarantee, "AUTO_REFUND_CAP", 1):
+                self.assertEqual(
+                    guarantee.report_bad_lead(c, cid, ids[0], "dead_phone"), "refunded"
+                )
+                # Second one is over the cap -> manual review, no auto-refund.
+                self.assertEqual(
+                    guarantee.report_bad_lead(c, cid, ids[1], "dead_phone"), "review"
+                )
+            self.assertEqual(len(db.pending_reports(c)), 1)
+
+    def test_multiple_reporters_deactivate_lead(self):
+        with db.connect(self.path) as c:
+            db.seed_plans(c)
+            a = auth.register(c, "A", "a@example.com", "secret123")
+            b = auth.register(c, "B", "b@example.com", "secret123")
+            for cid in (a, b):
+                db.add_service_area(c, cid, "Kent", 47.38, -122.23, 8.0)
+                billing.get_billing().subscribe(c, cid, 2)
+            scan.scan_area(c, "Kent", 47.38, -122.23, 8.0, finder=fake_finder())
+            lead_id = entitlements.candidate_leads(c, a)[0]["id"]
+            entitlements.reveal_lead(c, a, lead_id)
+            entitlements.reveal_lead(c, b, lead_id)
+            guarantee.report_bad_lead(c, a, lead_id, "closed")
+            active = c.execute("SELECT is_active FROM leads WHERE id=?", (lead_id,)).fetchone()
+            self.assertEqual(active["is_active"], 1)  # one report: still live
+            guarantee.report_bad_lead(c, b, lead_id, "closed")
+            active = c.execute("SELECT is_active FROM leads WHERE id=?", (lead_id,)).fetchone()
+            self.assertEqual(active["is_active"], 0)  # two distinct reports: pulled
 
 
 if __name__ == "__main__":

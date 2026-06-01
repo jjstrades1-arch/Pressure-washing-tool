@@ -130,12 +130,31 @@ CREATE TABLE IF NOT EXISTS reveals (
 );
 CREATE INDEX IF NOT EXISTS idx_reveals_period
     ON reveals(contractor_id, period_start);
+
+-- A 'bad lead' report under the credit-back guarantee. Covers lead *defects*
+-- (dead number, closed, duplicate, wrong info) -- never "I didn't win the job".
+CREATE TABLE IF NOT EXISTS lead_reports (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    contractor_id INTEGER NOT NULL REFERENCES contractors(id),
+    lead_id       INTEGER NOT NULL REFERENCES leads(id),
+    reason        TEXT NOT NULL,
+    status        TEXT DEFAULT 'approved',
+    period_start  TEXT,
+    created_at    TEXT,
+    UNIQUE(contractor_id, lead_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reports_contractor ON lead_reports(contractor_id);
 """
 
 # Columns added to `contractors` for "new since last login" tracking.
 CONTRACTOR_COLUMNS_V3 = [
     ("prev_login", "TEXT"),
     ("last_login", "TEXT"),
+]
+
+# Columns added to `reveals` so a refunded unlock frees its monthly-cap slot.
+REVEAL_COLUMNS = [
+    ("refunded", "INTEGER DEFAULT 0"),
 ]
 
 # Columns added to `leads` for freshness + enrichment. Applied idempotently so
@@ -151,6 +170,7 @@ LEAD_COLUMNS_V2 = [
     ("brand", "TEXT DEFAULT ''"),
     ("is_chain", "INTEGER DEFAULT 0"),
     ("phone_type", "TEXT DEFAULT ''"),
+    ("bad_reports", "INTEGER DEFAULT 0"),
 ]
 
 # Default subscription tiers seeded on first run. Prices in cents.
@@ -166,18 +186,20 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _add_missing_columns(conn: sqlite3.Connection, table: str, columns) -> None:
+    have = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    for col, decl in columns:
+        if col not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+
+
 def migrate(conn: sqlite3.Connection) -> None:
     """Create/upgrade all tables idempotently."""
     conn.executescript(SCHEMA)
     conn.executescript(SCHEMA_BUSINESS)
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(leads)")}
-    for col, decl in LEAD_COLUMNS_V2:
-        if col not in existing:
-            conn.execute(f"ALTER TABLE leads ADD COLUMN {col} {decl}")
-    have = {row["name"] for row in conn.execute("PRAGMA table_info(contractors)")}
-    for col, decl in CONTRACTOR_COLUMNS_V3:
-        if col not in have:
-            conn.execute(f"ALTER TABLE contractors ADD COLUMN {col} {decl}")
+    _add_missing_columns(conn, "leads", LEAD_COLUMNS_V2)
+    _add_missing_columns(conn, "contractors", CONTRACTOR_COLUMNS_V3)
+    _add_missing_columns(conn, "reveals", REVEAL_COLUMNS)
 
 
 @contextmanager
@@ -543,8 +565,10 @@ def touch_login(conn: sqlite3.Connection, contractor_id: int) -> str | None:
 
 # --- reveals (cap accounting / anti-scraping) ---
 def reveal_count(conn: sqlite3.Connection, contractor_id: int, period_start: str) -> int:
+    """Reveals that count against the cap (refunded ones free their slot)."""
     return conn.execute(
-        "SELECT COUNT(*) AS n FROM reveals WHERE contractor_id = ? AND period_start = ?",
+        """SELECT COUNT(*) AS n FROM reveals
+           WHERE contractor_id = ? AND period_start = ? AND refunded = 0""",
         (contractor_id, period_start),
     ).fetchone()["n"]
 
@@ -552,11 +576,38 @@ def reveal_count(conn: sqlite3.Connection, contractor_id: int, period_start: str
 def revealed_lead_ids(
     conn: sqlite3.Connection, contractor_id: int, period_start: str
 ) -> set[int]:
+    """Active (non-refunded) reveals -- what shows as unlocked and exports."""
     rows = conn.execute(
-        "SELECT lead_id FROM reveals WHERE contractor_id = ? AND period_start = ?",
+        """SELECT lead_id FROM reveals
+           WHERE contractor_id = ? AND period_start = ? AND refunded = 0""",
         (contractor_id, period_start),
     ).fetchall()
     return {r["lead_id"] for r in rows}
+
+
+def has_reveal(
+    conn: sqlite3.Connection, contractor_id: int, lead_id: int, period_start: str
+) -> bool:
+    """Whether the contractor unlocked this lead this period (refunded or not).
+
+    Used so revisiting a lead never double-charges, even after a refund.
+    """
+    return conn.execute(
+        """SELECT 1 FROM reveals
+           WHERE contractor_id = ? AND lead_id = ? AND period_start = ?""",
+        (contractor_id, lead_id, period_start),
+    ).fetchone() is not None
+
+
+def reveal_time(
+    conn: sqlite3.Connection, contractor_id: int, lead_id: int, period_start: str
+) -> str | None:
+    row = conn.execute(
+        """SELECT created_at FROM reveals
+           WHERE contractor_id = ? AND lead_id = ? AND period_start = ?""",
+        (contractor_id, lead_id, period_start),
+    ).fetchone()
+    return row["created_at"] if row else None
 
 
 def add_reveal(
@@ -567,6 +618,77 @@ def add_reveal(
            VALUES (?, ?, ?, ?)""",
         (contractor_id, lead_id, period_start, _now()),
     )
+
+
+def refund_reveal(
+    conn: sqlite3.Connection, contractor_id: int, lead_id: int, period_start: str
+) -> None:
+    """Mark a reveal refunded, returning its slot to the monthly cap."""
+    conn.execute(
+        """UPDATE reveals SET refunded = 1
+           WHERE contractor_id = ? AND lead_id = ? AND period_start = ?""",
+        (contractor_id, lead_id, period_start),
+    )
+
+
+# --- credit-back guarantee (bad-lead reports) ---
+def get_report(
+    conn: sqlite3.Connection, contractor_id: int, lead_id: int
+) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM lead_reports WHERE contractor_id = ? AND lead_id = ?",
+        (contractor_id, lead_id),
+    ).fetchone()
+
+
+def add_report(
+    conn: sqlite3.Connection, contractor_id: int, lead_id: int,
+    reason: str, status: str, period_start: str,
+) -> int:
+    cur = conn.execute(
+        """INSERT INTO lead_reports (contractor_id, lead_id, reason, status,
+                                     period_start, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (contractor_id, lead_id, reason, status, period_start, _now()),
+    )
+    return int(cur.lastrowid)
+
+
+def approved_report_count(
+    conn: sqlite3.Connection, contractor_id: int, period_start: str
+) -> int:
+    return conn.execute(
+        """SELECT COUNT(*) AS n FROM lead_reports
+           WHERE contractor_id = ? AND period_start = ? AND status = 'approved'""",
+        (contractor_id, period_start),
+    ).fetchone()["n"]
+
+
+def flag_bad_report(conn: sqlite3.Connection, lead_id: int) -> int:
+    """Increment a lead's bad-report counter; return distinct reporter count."""
+    conn.execute(
+        "UPDATE leads SET bad_reports = bad_reports + 1 WHERE id = ?", (lead_id,)
+    )
+    return conn.execute(
+        "SELECT COUNT(DISTINCT contractor_id) AS n FROM lead_reports "
+        "WHERE lead_id = ? AND status = 'approved'",
+        (lead_id,),
+    ).fetchone()["n"]
+
+
+def deactivate_lead(conn: sqlite3.Connection, lead_id: int) -> None:
+    conn.execute("UPDATE leads SET is_active = 0 WHERE id = ?", (lead_id,))
+
+
+def pending_reports(conn: sqlite3.Connection, limit: int = 50) -> list[sqlite3.Row]:
+    return conn.execute(
+        """SELECT r.*, l.name AS lead_name, c.business_name
+           FROM lead_reports r
+           JOIN leads l ON l.id = r.lead_id
+           JOIN contractors c ON c.id = r.contractor_id
+           WHERE r.status = 'review' ORDER BY r.id DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
 
 
 def won_summary(conn: sqlite3.Connection, contractor_id: int) -> tuple[int, int]:

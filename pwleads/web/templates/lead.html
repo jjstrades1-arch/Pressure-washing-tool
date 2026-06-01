@@ -5,7 +5,13 @@
 <h1>{{ lead['name'] }}
   {% if lead['is_chain'] %}<span class="tag chain">⛓ chain</span>{% endif %}
 </h1>
-<p class="note">{{ lead['category'] }} · lead score {{ lead['score'] }} · {{ lead['distance_km'] }} km away</p>
+<p class="note">{{ lead['category'] }} · value score {{ lead['score'] }} · {{ lead['distance_km'] }} km away</p>
+
+<div class="conf-panel conf-{{ confidence['label'] | lower }}">
+  <strong>Confidence: {{ confidence['label'] }}</strong> ({{ confidence['score'] }}/100)
+  — how likely this lead is real &amp; reachable.
+  <ul>{% for r in confidence['reasons'] %}<li>{{ r }}</li>{% endfor %}</ul>
+</div>
 
 <div class="approach">💡 <strong>Best approach:</strong> {{ hint }}</div>
 
@@ -35,6 +41,27 @@
     <h2>Email template</h2>
     <p class="note"><strong>Subject:</strong> {{ email['subject'] }}</p>
     <textarea class="copybox" rows="9" readonly>{{ email['body'] }}</textarea>
+  </section>
+
+  <section class="panel guarantee">
+    <h2>Bad lead? Get your credit back</h2>
+    {% if report %}
+      <p class="note">You reported this lead ({{ report['status'] }}).
+        {% if report['status'] == 'approved' %}Your unlock was credited back.{% endif %}</p>
+    {% else %}
+      <p class="note">Covered: dead number, closed business, duplicate, or wrong data.
+        <strong>Not</strong> covered: a prospect who said no or didn't hire you —
+        that's just sales.</p>
+      <form method="post" action="{{ url_for('main.report_lead', lead_id=lead['id']) }}" class="inline-form">
+        <select name="reason" required>
+          <option value="" disabled selected>Reason…</option>
+          {% for key, label in report_reasons.items() %}
+            <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn small ghost" type="submit">Report &amp; refund</button>
+      </form>
+    {% endif %}
   </section>
 {% else %}
   <div class="lock">
