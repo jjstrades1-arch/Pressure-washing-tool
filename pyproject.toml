@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pwleads"
+version = "1.0.0"
+description = "Find and manage leads for a pressure washing business using free OpenStreetMap data."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["pressure washing", "leads", "sales", "openstreetmap", "cli"]
+authors = [{ name = "pwleads" }]
+classifiers = [
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+]
+# Zero runtime dependencies: standard library only.
+dependencies = []
+
+[project.scripts]
+pwleads = "pwleads.cli:main"
+
+[tool.setuptools]
+packages = ["pwleads"]
