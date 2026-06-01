@@ -9,24 +9,41 @@
 
 <div class="approach">💡 <strong>Best approach:</strong> {{ hint }}</div>
 
-<div class="detail">
-  <dl>
-    <dt>Opportunity</dt><dd>{{ lead['note'] }}</dd>
-    {% if lead['brand'] %}<dt>Brand</dt><dd>{{ lead['brand'] }}</dd>{% endif %}
-    <dt>Address</dt><dd>{{ lead['address'] or '—' }}{% if lead['city'] %}, {{ lead['city'] }}{% endif %}</dd>
-    <dt>Phone</dt>
-    <dd>{{ lead['phone'] or '—' }}
-      {% if lead['phone_type'] == 'direct' %}<span class="tag good">local line</span>
-      {% elif lead['phone_type'] == 'tollfree' %}<span class="tag warn">toll-free / corporate</span>{% endif %}
-    </dd>
-    <dt>Email</dt><dd>{{ lead['email'] or '—' }}</dd>
-    <dt>Website</dt>
-    <dd>{% if lead['website'] %}<a href="{{ lead['website'] }}" target="_blank" rel="noopener">{{ lead['website'] }}</a>{% else %}—{% endif %}</dd>
-    <dt>Map</dt>
-    <dd><a target="_blank" rel="noopener"
-        href="https://www.openstreetmap.org/?mlat={{ lead['lat'] }}&mlon={{ lead['lon'] }}#map=18/{{ lead['lat'] }}/{{ lead['lon'] }}">Open in map</a></dd>
-  </dl>
-</div>
+{% if revealed %}
+  <div class="detail">
+    <dl>
+      <dt>Opportunity</dt><dd>{{ lead['note'] }}</dd>
+      {% if lead['brand'] %}<dt>Brand</dt><dd>{{ lead['brand'] }}</dd>{% endif %}
+      <dt>Address</dt><dd>{{ lead['address'] or '—' }}{% if lead['city'] %}, {{ lead['city'] }}{% endif %}</dd>
+      <dt>Phone</dt>
+      <dd>{{ lead['phone'] or '—' }}
+        {% if lead['phone_type'] == 'direct' %}<span class="tag good">local line</span>
+        {% elif lead['phone_type'] == 'tollfree' %}<span class="tag warn">toll-free / corporate</span>{% endif %}
+      </dd>
+      <dt>Email</dt><dd>{{ lead['email'] or '—' }}</dd>
+      <dt>Website</dt>
+      <dd>{% if lead['website'] %}<a href="{{ lead['website'] }}" target="_blank" rel="noopener">{{ lead['website'] }}</a>{% else %}—{% endif %}</dd>
+      <dt>Map</dt>
+      <dd><a target="_blank" rel="noopener"
+          href="https://www.openstreetmap.org/?mlat={{ lead['lat'] }}&mlon={{ lead['lon'] }}#map=18/{{ lead['lat'] }}/{{ lead['lon'] }}">Open in map</a></dd>
+    </dl>
+  </div>
+
+  <section class="panel">
+    <h2>Call script</h2>
+    <textarea class="copybox" rows="4" readonly>{{ script }}</textarea>
+    <h2>Email template</h2>
+    <p class="note"><strong>Subject:</strong> {{ email['subject'] }}</p>
+    <textarea class="copybox" rows="9" readonly>{{ email['body'] }}</textarea>
+  </section>
+{% else %}
+  <div class="lock">
+    <h2>Monthly unlock limit reached</h2>
+    <p>You've unlocked all <strong>{{ cap }}</strong> of this month's leads.
+       Upgrade your plan for more, or come back next billing period.</p>
+    <a class="btn" href="{{ url_for('main.plans') }}">Upgrade plan</a>
+  </div>
+{% endif %}
 
 <section class="panel">
   <h2>Your pipeline for this lead</h2>
@@ -37,6 +54,10 @@
           <option value="{{ s }}" {% if claim and claim['status'] == s %}selected{% endif %}>{{ s }}</option>
         {% endfor %}
       </select>
+    </label>
+    <label>Job value (if won)
+      <input name="job_value" placeholder="$ e.g. 1500"
+             value="{% if claim and claim['job_value_cents'] %}{{ (claim['job_value_cents'] / 100) | round(0,'floor') | int }}{% endif %}">
     </label>
     <label>Notes
       <textarea name="notes" rows="3">{{ claim['notes'] if claim else '' }}</textarea>

@@ -10,11 +10,27 @@
     <a class="btn" href="{{ url_for('main.plans') }}">See plans</a>
   </div>
 {% else %}
+  <div class="roi">
+    {% if roi['won_count'] %}
+      💰 You've won <strong>{{ roi['won_cents'] | money }}</strong> across
+      {{ roi['won_count'] }} job(s) from these leads — your {{ roi['plan_name'] }}
+      plan is {{ roi['price_cents'] | money }}/mo.
+    {% else %}
+      💡 Tip: when you win a job, open the lead and mark it <strong>won</strong>
+      with its dollar value — we'll track your return vs. the
+      {{ roi['price_cents'] | money }}/mo subscription here.
+    {% endif %}
+  </div>
+
   <p class="note">
     Plan: <strong>{{ sub['plan_name'] }}</strong> ·
-    showing leads scored {{ sub['min_lead_score'] }}+ ·
-    up to {{ sub['monthly_lead_cap'] }} / month
+    unlocked <strong>{{ used }}/{{ cap }}</strong> leads this month ·
+    showing leads scored {{ sub['min_lead_score'] }}+
   </p>
+
+  {% if new_count %}
+    <div class="flash ok">🆕 {{ new_count }} new lead(s) since your last visit.</div>
+  {% endif %}
 
   <section class="panel">
     <h2>Service areas</h2>
@@ -35,44 +51,39 @@
 
   <section class="panel">
     <div class="row-between">
-      <h2>Your leads ({{ leads | length }})</h2>
-      {% if leads %}<a class="btn small ghost" href="{{ url_for('main.export_csv') }}">Export CSV</a>{% endif %}
+      <h2>Leads ({{ leads | length }})</h2>
+      {% if leads %}<a class="btn small ghost" href="{{ url_for('main.export_csv') }}">Export unlocked</a>{% endif %}
     </div>
     {% if leads %}
+      <p class="note">Contact details unlock when you open a lead. You can unlock
+         up to {{ cap }} per month on the {{ sub['plan_name'] }} plan.</p>
       <table class="leads">
         <thead>
-          <tr><th>Score</th><th>Name</th><th>Category</th><th>Distance</th><th>Contact</th><th>Status</th></tr>
+          <tr><th>Score</th><th>Name</th><th>Category</th><th>Distance</th><th>Status</th><th></th></tr>
         </thead>
         <tbody>
           {% for l in leads %}
             <tr>
               <td class="score">{{ l['score'] }}</td>
-              <td><a href="{{ url_for('main.lead_detail', lead_id=l['id']) }}">{{ l['name'] }}</a></td>
+              <td>
+                <a href="{{ url_for('main.lead_detail', lead_id=l['id']) }}">{{ l['name'] }}</a>
+                {% if l['is_new'] %}<span class="tag good">new</span>{% endif %}
+                {% if l['is_chain'] %}<span class="tag chain">⛓</span>{% endif %}
+              </td>
               <td>{{ l['category'] }}</td>
               <td>{{ l['distance_km'] }} km</td>
-              <td class="contact">
-                {% if l['phone'] %}
-                  <span>📞 {{ l['phone'] }}
-                    {% if l['phone_type'] == 'direct' %}<span class="tag good">local</span>
-                    {% elif l['phone_type'] == 'tollfree' %}<span class="tag warn">toll-free</span>{% endif %}
-                  </span>
-                {% endif %}
-                {% if l['email'] %}<span>✉️ {{ l['email'] }}</span>{% endif %}
-                {% if l['is_chain'] %}<span class="tag chain">⛓ chain</span>{% endif %}
-                {% if not l['phone'] and not l['email'] %}<span class="muted">—</span>{% endif %}
-              </td>
+              <td><span class="badge {{ l['claim_status'] or 'none' }}">{{ l['claim_status'] or 'new' }}</span></td>
               <td>
-                <span class="badge {{ l['claim_status'] or 'none' }}">
-                  {{ l['claim_status'] or 'new' }}
-                </span>
+                {% if l['revealed'] %}<span class="tag good">✓ unlocked</span>
+                {% else %}<a class="tag" href="{{ url_for('main.lead_detail', lead_id=l['id']) }}">🔒 unlock</a>{% endif %}
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
     {% else %}
-      <p>No leads yet. Add a service area above, then ask your provider to run a
-         refresh (or use <code>pwleads scan</code>).</p>
+      <p>No leads yet. Add a service area above — we'll start finding leads
+         automatically, or your provider can run a refresh.</p>
     {% endif %}
   </section>
 {% endif %}

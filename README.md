@@ -134,6 +134,22 @@ areas** and **Enrich**. Subscribers immediately see ranked leads on their dashbo
 | Pro | $99/mo | 12 km | 2 | 60+ | 100 | shared |
 | Metro | $199/mo | 16 km | 3 | all | 400 | exclusive |
 
+### What a subscriber experiences
+
+- **Instant leads.** Adding a service area kicks off a background scan (free
+  OpenStreetMap data), so the dashboard fills on its own — no empty start.
+- **Monthly unlocks.** Leads are browsable, but contact details unlock when you
+  open a lead, capped per month by your plan. This is also what stops one cheap
+  subscription from scraping the whole list — export only includes leads you've
+  unlocked.
+- **ROI tracking.** Mark a lead *won* with its dollar value and the dashboard
+  shows what you've earned vs. your subscription cost.
+- **New-since-last-visit** badges so returning users see what's fresh.
+- **Fair sharing.** Once you're actively working a shared lead, it's reserved
+  for you for two weeks so crews aren't all cold-calling the same business.
+- **Outreach help.** Every lead comes with a ready call script and email
+  template tailored to that business type — copy, paste, send.
+
 ### How the pieces fit
 
 - `auth.py` — contractor accounts (hashed passwords).

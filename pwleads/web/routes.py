@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import io
+import threading
 
 from flask import (
     Blueprint, Response, abort, current_app, flash, redirect,
@@ -11,7 +12,8 @@ from flask import (
 )
 
 from .. import (
-    auth, billing, db, entitlements, enrich, export, quality, scan, scoring, sources,
+    auth, billing, db, entitlements, enrich, export, outreach, quality,
+    scan, scoring, sources,
 )
 
 bp = Blueprint("main", __name__)
@@ -19,6 +21,18 @@ bp = Blueprint("main", __name__)
 
 def _db():
     return db.connect(current_app.config["DB_PATH"])
+
+
+def _autoscan(db_path: str, label: str, lat: float, lon: float, radius_km: float):
+    """Background scan so a contractor's dashboard fills right after they add
+    an area. Uses only free OpenStreetMap data (no API keys, no cost).
+    Failures are swallowed -- the owner can always re-scan from the admin panel.
+    """
+    try:
+        with db.connect(db_path) as conn:
+            scan.scan_area(conn, label, lat, lon, radius_km)
+    except Exception:  # noqa: BLE001 - best-effort background work
+        pass
 
 
 def current_contractor_id():
@@ -75,6 +89,7 @@ def signup():
             except auth.AuthError as exc:
                 flash(str(exc), "error")
                 return render_template("signup.html", form=request.form)
+            db.touch_login(conn, cid)
         session.clear()
         session["contractor_id"] = cid
         flash("Account created. Pick a plan to start getting leads.", "ok")
@@ -94,6 +109,8 @@ def login():
         if contractor is None:
             flash("Wrong email or password.", "error")
             return render_template("login.html")
+        with _db() as conn:
+            db.touch_login(conn, contractor["id"])
         session.clear()
         session["contractor_id"] = contractor["id"]
         return redirect(url_for("main.dashboard"))
@@ -159,10 +176,24 @@ def add_area():
         except sources.SourceError as exc:
             flash(f"Could not find that location: {exc}", "error")
             return redirect(url_for("main.dashboard"))
+        radius = sub["plan_radius_km"]
         db.add_service_area(
-            conn, cid, place.display_name, place.lat, place.lon, sub["plan_radius_km"]
+            conn, cid, place.display_name, place.lat, place.lon, radius
         )
-    flash(f"Added service area: {place.display_name}", "ok")
+    # Auto-fill the dashboard by scanning the new area in the background (free).
+    if current_app.config.get("AUTOSCAN", True):
+        threading.Thread(
+            target=_autoscan,
+            args=(current_app.config["DB_PATH"], place.display_name,
+                  place.lat, place.lon, radius),
+            daemon=True,
+        ).start()
+        flash(
+            f"Added {place.display_name}. Finding leads now — "
+            "refresh in a minute.", "ok",
+        )
+    else:
+        flash(f"Added service area: {place.display_name}", "ok")
     return redirect(url_for("main.dashboard"))
 
 
@@ -177,13 +208,20 @@ def dashboard():
         contractor = db.get_contractor(conn, cid)
         sub = entitlements.access(conn, cid)
         areas = db.list_service_areas(conn, cid)
-        leads = entitlements.visible_leads(conn, cid) if sub else []
+        leads = entitlements.candidate_leads(conn, cid) if sub else []
+        roi = entitlements.roi(conn, cid) if sub else None
+        used, cap = entitlements.reveal_usage(conn, cid) if sub else (0, 0)
+    new_count = sum(1 for l in leads if l["is_new"])
     return render_template(
         "dashboard.html",
         contractor=contractor,
         sub=sub,
         areas=areas,
         leads=leads,
+        roi=roi,
+        used=used,
+        cap=cap,
+        new_count=new_count,
         statuses=scoring.STATUSES,
     )
 
@@ -193,14 +231,32 @@ def dashboard():
 def lead_detail(lead_id):
     cid = current_contractor_id()
     with _db() as conn:
-        lead = entitlements.lead_visible_to(conn, cid, lead_id)
+        lead = entitlements.get_candidate(conn, cid, lead_id)
         if lead is None:
             abort(404)
+        # Viewing the detail "reveals" the lead (counts against the monthly cap).
+        reveal_status = entitlements.reveal_lead(conn, cid, lead_id)
         claim = db.get_claim(conn, lead_id, cid)
+        contractor = db.get_contractor(conn, cid)
+        used, cap = entitlements.reveal_usage(conn, cid)
+    revealed = reveal_status in ("ok", "already")
     hint = quality.outreach_hint(lead["is_chain"], lead["phone_type"])
+    company = contractor["business_name"]
+    script = outreach.call_script(lead["name"], lead["category"], company)
+    email = outreach.email_template(lead["name"], lead["category"], company)
     return render_template(
-        "lead.html", lead=lead, claim=claim, hint=hint, statuses=scoring.STATUSES
+        "lead.html", lead=lead, claim=claim, hint=hint, revealed=revealed,
+        used=used, cap=cap, script=script, email=email, statuses=scoring.STATUSES,
     )
+
+
+def _dollars_to_cents(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        return int(round(float(value.replace("$", "").replace(",", "")) * 100))
+    except ValueError:
+        return None
 
 
 @bp.route("/lead/<int:lead_id>/update", methods=["POST"])
@@ -209,12 +265,16 @@ def update_claim(lead_id):
     cid = current_contractor_id()
     status = request.form.get("status") or None
     notes = request.form.get("notes")
+    job_value_cents = _dollars_to_cents(request.form.get("job_value"))
     if status and status not in scoring.STATUSES:
         abort(400)
     with _db() as conn:
-        if entitlements.lead_visible_to(conn, cid, lead_id) is None:
+        if entitlements.get_candidate(conn, cid, lead_id) is None:
             abort(404)
-        db.upsert_claim(conn, lead_id, cid, status=status, notes=notes)
+        db.upsert_claim(
+            conn, lead_id, cid, status=status, notes=notes,
+            job_value_cents=job_value_cents,
+        )
     flash("Lead updated.", "ok")
     return redirect(request.referrer or url_for("main.dashboard"))
 
@@ -224,12 +284,12 @@ def update_claim(lead_id):
 def export_csv():
     cid = current_contractor_id()
     with _db() as conn:
-        leads = entitlements.visible_leads(conn, cid)
+        leads = entitlements.revealed_leads(conn, cid)
     buf = io.StringIO()
     import csv
 
     cols = ["id", "name", "category", "score", "claim_status", "phone",
-            "email", "website", "address", "city", "distance_km", "note"]
+            "phone_type", "email", "website", "address", "city", "note"]
     writer = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     writer.writeheader()
     for lead in leads:

@@ -106,12 +106,12 @@ class EntitlementsTests(FixtureMixin):
             db.seed_plans(c)
             cid = auth.register(c, "Mike", "m@example.com", "secret123")
             db.add_service_area(c, cid, "Kent", 47.38, -122.23, 8.0)
-            self.assertEqual(entitlements.visible_leads(c, cid), [])
+            self.assertEqual(entitlements.candidate_leads(c, cid), [])
 
     def test_area_and_distance_filtering(self):
         with db.connect(self.path) as c:
             cid = self._setup(c)
-            names = {l["name"] for l in entitlements.visible_leads(c, cid)}
+            names = {l["name"] for l in entitlements.candidate_leads(c, cid)}
             self.assertIn("QuickFuel", names)
             self.assertIn("Joe Diner", names)
             self.assertNotIn("FarMart", names)  # ~100km away, excluded
@@ -126,21 +126,25 @@ class EntitlementsTests(FixtureMixin):
             db.add_service_area(c, cid, "Kent", 47.38, -122.23, 8.0)
             billing.get_billing().subscribe(c, cid, 1)  # Starter, min 80
             scan.scan_area(c, "Kent", 47.38, -122.23, 8.0, finder=fake_finder(extra))
-            scores = [l["score"] for l in entitlements.visible_leads(c, cid)]
+            scores = [l["score"] for l in entitlements.candidate_leads(c, cid)]
             self.assertTrue(all(s >= 80 for s in scores))
 
-    def test_cap_limits_results(self):
+    def test_reveal_cap_limits_unlocks(self):
         with db.connect(self.path) as c:
             db.seed_plans(c)
-            # Shrink Starter cap to 1 for the test.
             c.execute("UPDATE plans SET monthly_lead_cap = 1 WHERE id = 1")
             cid = auth.register(c, "Mike", "m@example.com", "secret123")
             db.add_service_area(c, cid, "Kent", 47.38, -122.23, 8.0)
-            billing.get_billing().subscribe(c, cid, 1)
+            billing.get_billing().subscribe(c, cid, 1)  # Starter, cap now 1
             scan.scan_area(c, "Kent", 47.38, -122.23, 8.0, finder=fake_finder())
-            leads = entitlements.visible_leads(c, cid)
-            self.assertEqual(len(leads), 1)
-            self.assertEqual(leads[0]["name"], "QuickFuel")  # highest score
+            leads = entitlements.candidate_leads(c, cid)
+            self.assertEqual(len(leads), 2)  # both browsable
+            ids = [l["id"] for l in leads]
+            self.assertEqual(entitlements.reveal_lead(c, cid, ids[0]), "ok")
+            self.assertEqual(entitlements.reveal_lead(c, cid, ids[0]), "already")
+            self.assertEqual(entitlements.reveal_lead(c, cid, ids[1]), "limit")
+            self.assertEqual(entitlements.reveal_usage(c, cid), (1, 1))
+            self.assertEqual(len(entitlements.revealed_leads(c, cid)), 1)
 
     def test_exclusivity_hides_from_others(self):
         with db.connect(self.path) as c:
@@ -151,14 +155,45 @@ class EntitlementsTests(FixtureMixin):
                 db.add_service_area(c, cid, "Kent", 47.38, -122.23, 8.0)
                 billing.get_billing().subscribe(c, cid, 3)  # Metro = exclusive
             scan.scan_area(c, "Kent", 47.38, -122.23, 8.0, finder=fake_finder())
-            # Mark all leads exclusive, then A claims QuickFuel.
             c.execute("UPDATE leads SET exclusivity = 'exclusive'")
             qf = c.execute("SELECT id FROM leads WHERE name='QuickFuel'").fetchone()["id"]
             db.upsert_claim(c, qf, a, status="contacted")
-            a_names = {l["name"] for l in entitlements.visible_leads(c, a)}
-            b_names = {l["name"] for l in entitlements.visible_leads(c, b)}
+            a_names = {l["name"] for l in entitlements.candidate_leads(c, a)}
+            b_names = {l["name"] for l in entitlements.candidate_leads(c, b)}
             self.assertIn("QuickFuel", a_names)
             self.assertNotIn("QuickFuel", b_names)
+
+    def test_working_a_shared_lead_locks_it(self):
+        with db.connect(self.path) as c:
+            db.seed_plans(c)
+            a = auth.register(c, "A", "a@example.com", "secret123")
+            b = auth.register(c, "B", "b@example.com", "secret123")
+            for cid in (a, b):
+                db.add_service_area(c, cid, "Kent", 47.38, -122.23, 8.0)
+                billing.get_billing().subscribe(c, cid, 2)  # Pro = shared
+            scan.scan_area(c, "Kent", 47.38, -122.23, 8.0, finder=fake_finder())
+            qf = c.execute("SELECT id FROM leads WHERE name='QuickFuel'").fetchone()["id"]
+            db.upsert_claim(c, qf, a, status="contacted")  # A is working it
+            self.assertIn("QuickFuel", {l["name"] for l in entitlements.candidate_leads(c, a)})
+            self.assertNotIn("QuickFuel", {l["name"] for l in entitlements.candidate_leads(c, b)})
+
+    def test_new_since_login_flag(self):
+        with db.connect(self.path) as c:
+            cid = self._setup(c)
+            c.execute("UPDATE contractors SET prev_login='2000-01-01T00:00:00+00:00' WHERE id=?", (cid,))
+            self.assertTrue(all(l["is_new"] for l in entitlements.candidate_leads(c, cid)))
+            c.execute("UPDATE contractors SET prev_login='2099-01-01T00:00:00+00:00' WHERE id=?", (cid,))
+            self.assertFalse(any(l["is_new"] for l in entitlements.candidate_leads(c, cid)))
+
+    def test_roi_reports_won_value(self):
+        with db.connect(self.path) as c:
+            cid = self._setup(c)  # Pro plan = $99/mo
+            lead_id = entitlements.candidate_leads(c, cid)[0]["id"]
+            db.upsert_claim(c, lead_id, cid, status="won", job_value_cents=200000)
+            r = entitlements.roi(c, cid)
+            self.assertEqual(r["won_cents"], 200000)
+            self.assertEqual(r["won_count"], 1)
+            self.assertEqual(r["price_cents"], 9900)
 
 
 class ScanFreshnessTests(FixtureMixin):

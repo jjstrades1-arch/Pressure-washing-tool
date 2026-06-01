@@ -116,7 +116,27 @@ CREATE TABLE IF NOT EXISTS scans (
     refreshed   INTEGER DEFAULT 0,
     error       TEXT
 );
+
+-- A 'reveal' = a contractor unlocking a lead's contact info this billing
+-- period. The plan's monthly_lead_cap limits distinct reveals, which is what
+-- stops someone subscribing once and scraping the whole inventory.
+CREATE TABLE IF NOT EXISTS reveals (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    contractor_id INTEGER NOT NULL REFERENCES contractors(id),
+    lead_id       INTEGER NOT NULL REFERENCES leads(id),
+    period_start  TEXT NOT NULL,
+    created_at    TEXT,
+    UNIQUE(contractor_id, lead_id, period_start)
+);
+CREATE INDEX IF NOT EXISTS idx_reveals_period
+    ON reveals(contractor_id, period_start);
 """
+
+# Columns added to `contractors` for "new since last login" tracking.
+CONTRACTOR_COLUMNS_V3 = [
+    ("prev_login", "TEXT"),
+    ("last_login", "TEXT"),
+]
 
 # Columns added to `leads` for freshness + enrichment. Applied idempotently so
 # databases created by the original single-user CLI upgrade in place.
@@ -154,6 +174,10 @@ def migrate(conn: sqlite3.Connection) -> None:
     for col, decl in LEAD_COLUMNS_V2:
         if col not in existing:
             conn.execute(f"ALTER TABLE leads ADD COLUMN {col} {decl}")
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(contractors)")}
+    for col, decl in CONTRACTOR_COLUMNS_V3:
+        if col not in have:
+            conn.execute(f"ALTER TABLE contractors ADD COLUMN {col} {decl}")
 
 
 @contextmanager
@@ -476,6 +500,83 @@ def lead_exclusive_owner(conn: sqlite3.Connection, lead_id: int) -> int | None:
         (lead_id,),
     ).fetchone()
     return row["contractor_id"] if row else None
+
+
+# Statuses that mean a contractor is actively working a lead (soft-locks it).
+WORKING_STATUSES = ("contacted", "quoted", "won")
+
+
+def lead_lock_owner(
+    conn: sqlite3.Connection, lead_id: int, since_iso: str
+) -> int | None:
+    """Contractor temporarily reserving a (shared) lead by actively working it.
+
+    Returns the contractor_id whose working claim was updated since ``since_iso``,
+    so other contractors don't all cold-call the same business at once.
+    """
+    placeholders = ", ".join("?" for _ in WORKING_STATUSES)
+    row = conn.execute(
+        f"""SELECT contractor_id FROM claims
+            WHERE lead_id = ? AND status IN ({placeholders})
+              AND updated_at >= ?
+            ORDER BY updated_at ASC LIMIT 1""",
+        (lead_id, *WORKING_STATUSES, since_iso),
+    ).fetchone()
+    return row["contractor_id"] if row else None
+
+
+# --- login tracking ("new since last login") ---
+def touch_login(conn: sqlite3.Connection, contractor_id: int) -> str | None:
+    """Roll last_login -> prev_login and stamp a new last_login.
+
+    Returns the previous login time (what 'new since last login' compares to).
+    """
+    row = get_contractor(conn, contractor_id)
+    prev = row["last_login"] if row else None
+    now = _now()
+    conn.execute(
+        "UPDATE contractors SET prev_login = ?, last_login = ? WHERE id = ?",
+        (prev, now, contractor_id),
+    )
+    return prev
+
+
+# --- reveals (cap accounting / anti-scraping) ---
+def reveal_count(conn: sqlite3.Connection, contractor_id: int, period_start: str) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) AS n FROM reveals WHERE contractor_id = ? AND period_start = ?",
+        (contractor_id, period_start),
+    ).fetchone()["n"]
+
+
+def revealed_lead_ids(
+    conn: sqlite3.Connection, contractor_id: int, period_start: str
+) -> set[int]:
+    rows = conn.execute(
+        "SELECT lead_id FROM reveals WHERE contractor_id = ? AND period_start = ?",
+        (contractor_id, period_start),
+    ).fetchall()
+    return {r["lead_id"] for r in rows}
+
+
+def add_reveal(
+    conn: sqlite3.Connection, contractor_id: int, lead_id: int, period_start: str
+) -> None:
+    conn.execute(
+        """INSERT OR IGNORE INTO reveals (contractor_id, lead_id, period_start, created_at)
+           VALUES (?, ?, ?, ?)""",
+        (contractor_id, lead_id, period_start, _now()),
+    )
+
+
+def won_summary(conn: sqlite3.Connection, contractor_id: int) -> tuple[int, int]:
+    """Return (total job value cents, number of won jobs) for a contractor."""
+    row = conn.execute(
+        """SELECT COALESCE(SUM(job_value_cents), 0) AS total, COUNT(*) AS n
+           FROM claims WHERE contractor_id = ? AND status = 'won'""",
+        (contractor_id,),
+    ).fetchone()
+    return int(row["total"]), int(row["n"])
 
 
 # --- scans audit log ---

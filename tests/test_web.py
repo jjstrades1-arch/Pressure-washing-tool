@@ -33,7 +33,8 @@ class WebJourneyTests(unittest.TestCase):
         tmp.close()
         self.path = tmp.name
         app = create_app(self.path)
-        app.config.update(TESTING=True, ADMIN_PASSWORD="admin")
+        # AUTOSCAN off so adding an area never hits the network in tests.
+        app.config.update(TESTING=True, ADMIN_PASSWORD="admin", AUTOSCAN=False)
         self.client = app.test_client()
 
     def tearDown(self):
@@ -106,7 +107,7 @@ class WebJourneyTests(unittest.TestCase):
         from pwleads import db, entitlements
         with db.connect(self.path) as conn:
             cid = conn.execute("SELECT id FROM contractors LIMIT 1").fetchone()["id"]
-            return entitlements.visible_leads(conn, cid)[0]["id"]
+            return entitlements.candidate_leads(conn, cid)[0]["id"]
 
     def test_login_required_redirects(self):
         r = self.client.get("/dashboard", follow_redirects=False)
