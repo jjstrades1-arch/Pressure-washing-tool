@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
-from . import __version__, scoring
+from . import __version__, quality, scoring
 
 USER_AGENT = f"pwleads/{__version__} (pressure-washing lead finder)"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -52,6 +52,8 @@ class Prospect:
     lat: float
     lon: float
     email: str = ""
+    brand: str = ""
+    is_chain: int = 0
 
 
 def _get(url: str, timeout: int) -> bytes:
@@ -175,6 +177,7 @@ def find_prospects(
 
         address, city = _compose_address(tags)
         name = tags.get("name") or tags.get("operator") or f"(unnamed {category.lower()})"
+        brand, is_chain = quality.chain_from_tags(tags)
 
         prospects.append(
             Prospect(
@@ -190,6 +193,8 @@ def find_prospects(
                 lat=float(lat),
                 lon=float(lon),
                 email=tags.get("email", "") or tags.get("contact:email", ""),
+                brand=brand,
+                is_chain=is_chain,
             )
         )
 

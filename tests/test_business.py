@@ -8,7 +8,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pwleads import (  # noqa: E402
-    auth, billing, db, entitlements, enrich, scan, sources,
+    auth, billing, db, entitlements, enrich, quality, scan, sources,
 )
 
 
@@ -177,6 +177,52 @@ class ScanFreshnessTests(FixtureMixin):
             self.assertEqual(r2["refreshed"], 1)
             qf = c.execute("SELECT is_active FROM leads WHERE name='QuickFuel'").fetchone()
             self.assertEqual(qf["is_active"], 0)
+
+
+class QualityTests(unittest.TestCase):
+    def test_classify_phone(self):
+        self.assertEqual(quality.classify_phone("(253) 852-1998"), "direct")
+        self.assertEqual(quality.classify_phone("+1 253-852-1998"), "direct")
+        self.assertEqual(quality.classify_phone("1-800-555-1212"), "tollfree")
+        self.assertEqual(quality.classify_phone("888.555.0000"), "tollfree")
+        self.assertEqual(quality.classify_phone("12"), "unknown")
+        self.assertEqual(quality.classify_phone(""), "")
+
+    def test_chain_from_tags(self):
+        brand, is_chain = quality.chain_from_tags({"brand": "Chevron", "name": "Chevron"})
+        self.assertEqual(brand, "Chevron")
+        self.assertEqual(is_chain, 1)
+        brand, is_chain = quality.chain_from_tags({"name": "Joe's Diner"})
+        self.assertEqual(is_chain, 0)
+
+    def test_outreach_hint(self):
+        self.assertIn("visit", quality.outreach_hint(0, "tollfree").lower())
+        self.assertIn("manager", quality.outreach_hint(1, "direct").lower())
+        self.assertIn("call", quality.outreach_hint(0, "direct").lower())
+
+    def test_scan_persists_quality_signals(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        try:
+            def finder(place, radius_km, **kw):
+                return [
+                    sources.Prospect("node/1", "Chevron", "Gas station", 95, "x",
+                        "", "Kent", "1-800-555-1212", "", place.lat, place.lon,
+                        email="", brand="Chevron", is_chain=1),
+                    sources.Prospect("node/2", "Joe Diner", "Restaurant", 88, "x",
+                        "", "Kent", "(253) 852-1998", "", place.lat, place.lon,
+                        email="", brand="", is_chain=0),
+                ]
+            with db.connect(tmp.name) as c:
+                scan.scan_area(c, "Kent", 47.38, -122.23, 8.0, finder=finder)
+                chev = c.execute("SELECT * FROM leads WHERE name='Chevron'").fetchone()
+                joe = c.execute("SELECT * FROM leads WHERE name='Joe Diner'").fetchone()
+                self.assertEqual(chev["is_chain"], 1)
+                self.assertEqual(chev["phone_type"], "tollfree")
+                self.assertEqual(joe["is_chain"], 0)
+                self.assertEqual(joe["phone_type"], "direct")
+        finally:
+            os.unlink(tmp.name)
 
 
 class EnrichParsingTests(unittest.TestCase):

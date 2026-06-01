@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.robotparser
 from datetime import datetime, timedelta, timezone
 
-from . import db, sources
+from . import db, quality, sources
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 # US-style phone numbers; tolerant of (), spaces, dots and dashes.
@@ -114,6 +114,7 @@ def enrich_lead(
                 phone = extract_phone(html)
                 if phone:
                     changes["phone"] = phone
+                    changes["phone_type"] = quality.classify_phone(phone)
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     sets = [f"{col} = ?" for col in changes]

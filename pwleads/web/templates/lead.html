@@ -2,14 +2,23 @@
 {% block title %}{{ lead['name'] }} — PowerLeads{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('main.dashboard') }}">&larr; Back to dashboard</a></p>
-<h1>{{ lead['name'] }}</h1>
+<h1>{{ lead['name'] }}
+  {% if lead['is_chain'] %}<span class="tag chain">⛓ chain</span>{% endif %}
+</h1>
 <p class="note">{{ lead['category'] }} · lead score {{ lead['score'] }} · {{ lead['distance_km'] }} km away</p>
+
+<div class="approach">💡 <strong>Best approach:</strong> {{ hint }}</div>
 
 <div class="detail">
   <dl>
     <dt>Opportunity</dt><dd>{{ lead['note'] }}</dd>
+    {% if lead['brand'] %}<dt>Brand</dt><dd>{{ lead['brand'] }}</dd>{% endif %}
     <dt>Address</dt><dd>{{ lead['address'] or '—' }}{% if lead['city'] %}, {{ lead['city'] }}{% endif %}</dd>
-    <dt>Phone</dt><dd>{{ lead['phone'] or '—' }}</dd>
+    <dt>Phone</dt>
+    <dd>{{ lead['phone'] or '—' }}
+      {% if lead['phone_type'] == 'direct' %}<span class="tag good">local line</span>
+      {% elif lead['phone_type'] == 'tollfree' %}<span class="tag warn">toll-free / corporate</span>{% endif %}
+    </dd>
     <dt>Email</dt><dd>{{ lead['email'] or '—' }}</dd>
     <dt>Website</dt>
     <dd>{% if lead['website'] %}<a href="{{ lead['website'] }}" target="_blank" rel="noopener">{{ lead['website'] }}</a>{% else %}—{% endif %}</dd>

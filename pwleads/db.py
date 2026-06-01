@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import quality
 from .sources import Prospect
 
 DEFAULT_DB = "pwleads.db"
@@ -127,6 +128,9 @@ LEAD_COLUMNS_V2 = [
     ("contact_name", "TEXT DEFAULT ''"),
     ("enriched_at", "TEXT"),
     ("exclusivity", "TEXT DEFAULT 'shared'"),
+    ("brand", "TEXT DEFAULT ''"),
+    ("is_chain", "INTEGER DEFAULT 0"),
+    ("phone_type", "TEXT DEFAULT ''"),
 ]
 
 # Default subscription tiers seeded on first run. Prices in cents.
@@ -192,13 +196,17 @@ def upsert_prospects(
             INSERT INTO leads (osm_id, name, category, score, note, address,
                                city, phone, website, email, lat, lon, status,
                                notes, source_area, created_at, updated_at,
-                               first_seen, last_seen, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', '', ?, ?, ?, ?, ?, 1)
+                               first_seen, last_seen, is_active,
+                               brand, is_chain, phone_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', '', ?, ?, ?, ?, ?, 1,
+                    ?, ?, ?)
             """,
             (
                 p.osm_id, p.name, p.category, p.score, p.note, p.address,
                 p.city, p.phone, p.website, getattr(p, "email", ""), p.lat, p.lon,
                 source_area, now, now, now, now,
+                getattr(p, "brand", ""), getattr(p, "is_chain", 0),
+                quality.classify_phone(p.phone),
             ),
         )
         added += 1

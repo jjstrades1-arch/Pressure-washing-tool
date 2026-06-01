@@ -10,7 +10,9 @@ from flask import (
     render_template, request, session, url_for,
 )
 
-from .. import auth, billing, db, entitlements, enrich, export, scan, scoring, sources
+from .. import (
+    auth, billing, db, entitlements, enrich, export, quality, scan, scoring, sources,
+)
 
 bp = Blueprint("main", __name__)
 
@@ -195,8 +197,9 @@ def lead_detail(lead_id):
         if lead is None:
             abort(404)
         claim = db.get_claim(conn, lead_id, cid)
+    hint = quality.outreach_hint(lead["is_chain"], lead["phone_type"])
     return render_template(
-        "lead.html", lead=lead, claim=claim, statuses=scoring.STATUSES
+        "lead.html", lead=lead, claim=claim, hint=hint, statuses=scoring.STATUSES
     )
 
 

@@ -51,8 +51,14 @@
               <td>{{ l['category'] }}</td>
               <td>{{ l['distance_km'] }} km</td>
               <td class="contact">
-                {% if l['phone'] %}<span>📞 {{ l['phone'] }}</span>{% endif %}
+                {% if l['phone'] %}
+                  <span>📞 {{ l['phone'] }}
+                    {% if l['phone_type'] == 'direct' %}<span class="tag good">local</span>
+                    {% elif l['phone_type'] == 'tollfree' %}<span class="tag warn">toll-free</span>{% endif %}
+                  </span>
+                {% endif %}
                 {% if l['email'] %}<span>✉️ {{ l['email'] }}</span>{% endif %}
+                {% if l['is_chain'] %}<span class="tag chain">⛓ chain</span>{% endif %}
                 {% if not l['phone'] and not l['email'] %}<span class="muted">—</span>{% endif %}
               </td>
               <td>
