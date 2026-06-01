@@ -19,6 +19,7 @@ from . import __version__, scoring
 
 USER_AGENT = f"pwleads/{__version__} (pressure-washing lead finder)"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 
@@ -50,6 +51,7 @@ class Prospect:
     website: str
     lat: float
     lon: float
+    email: str = ""
 
 
 def _get(url: str, timeout: int) -> bytes:
@@ -59,6 +61,39 @@ def _get(url: str, timeout: int) -> bytes:
             return resp.read()
     except Exception as exc:  # noqa: BLE001 - surface a clean message
         raise SourceError(f"request failed: {exc}") from exc
+
+
+def fetch_text(url: str, timeout: int = 12, max_bytes: int = 400_000) -> str:
+    """Fetch a URL and return decoded text (best effort, size-capped).
+
+    Used by enrichment to read a business website. Returns '' on any failure
+    so enrichment never crashes on a dead or hostile page.
+    """
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read(max_bytes)
+    except Exception:  # noqa: BLE001 - enrichment is best-effort
+        return ""
+    return raw.decode("utf-8", errors="replace")
+
+
+def reverse_geocode(lat: float, lon: float, timeout: int = 20) -> tuple[str, str]:
+    """Resolve a coordinate to (street address, city) via Nominatim."""
+    params = urllib.parse.urlencode(
+        {"lat": lat, "lon": lon, "format": "json", "zoom": 18, "addressdetails": 1}
+    )
+    raw = _get(f"{NOMINATIM_REVERSE_URL}?{params}", timeout)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SourceError("could not parse reverse-geocoding response") from exc
+    addr = data.get("address", {})
+    house = addr.get("house_number", "")
+    road = addr.get("road", "")
+    street = f"{house} {road}".strip()
+    city = addr.get("city") or addr.get("town") or addr.get("village") or ""
+    return street, city
 
 
 def geocode(query: str, timeout: int = 20) -> Place:
@@ -154,6 +189,7 @@ def find_prospects(
                 website=tags.get("website", "") or tags.get("contact:website", ""),
                 lat=float(lat),
                 lon=float(lon),
+                email=tags.get("email", "") or tags.get("contact:email", ""),
             )
         )
 

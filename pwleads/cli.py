@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import __version__, db, export, scoring, sources
+from . import __version__, auth, billing, db, enrich, export, scan, scoring, sources
 
 
 def _fmt_phone_site(row) -> str:
@@ -157,6 +157,89 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scan(args: argparse.Namespace) -> int:
+    with db.connect(args.db) as conn:
+        if args.all_areas:
+            results = scan.scan_all_areas(conn)
+            if not results:
+                print("No service areas to scan. Contractors add these via the web app.")
+                return 0
+            for r in results:
+                tag = f"error: {r['error']}" if r["error"] else (
+                    f"{r['found']} found, {r['added']} new, "
+                    f"{r['refreshed']} refreshed, {r['deactivated']} closed"
+                )
+                print(f"  {r['label']}: {tag}")
+            return 0
+        if not args.location:
+            print("error: provide a location or use --all-areas", file=sys.stderr)
+            return 1
+        print(f"Scanning {args.location!r} (radius {args.radius} km) ...")
+        try:
+            r = scan.scan_location(conn, args.location, args.radius)
+        except sources.SourceError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+    if r["error"]:
+        print(f"error: {r['error']}", file=sys.stderr)
+        return 1
+    print(
+        f"{r['label']}: {r['found']} found, {r['added']} new, "
+        f"{r['refreshed']} refreshed, {r['deactivated']} marked closed."
+    )
+    return 0
+
+
+def cmd_enrich(args: argparse.Namespace) -> int:
+    print(f"Enriching up to {args.limit} lead(s) (free sources) ...")
+    with db.connect(args.db) as conn:
+        res = enrich.enrich_pending(conn, limit=args.limit, delay=args.delay)
+    print(
+        f"Processed {res['processed']} lead(s); "
+        f"{res['updated']} gained new contact/address info."
+    )
+    return 0
+
+
+def cmd_plan_seed(args: argparse.Namespace) -> int:
+    with db.connect(args.db) as conn:
+        n = db.seed_plans(conn)
+    print(f"Seeded {n} plan(s)." if n else "Plans already seeded.")
+    return 0
+
+
+def cmd_contractor_add(args: argparse.Namespace) -> int:
+    with db.connect(args.db) as conn:
+        try:
+            cid = auth.register(conn, args.name, args.email, args.password)
+        except auth.AuthError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        if args.plan:
+            plan = next(
+                (p for p in db.list_plans(conn)
+                 if p["name"].lower() == args.plan.lower()), None
+            )
+            if plan is None:
+                print(f"error: no plan named {args.plan!r}", file=sys.stderr)
+                return 1
+            billing.get_billing().subscribe(conn, cid, plan["id"])
+            print(f"Created contractor #{cid} on the {plan['name']} plan.")
+        else:
+            print(f"Created contractor #{cid} (no subscription yet).")
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    from .web import create_app
+
+    app = create_app(args.db)
+    print(f"Starting PowerLeads web app at http://{args.host}:{args.port}")
+    print("Admin panel: /admin  (password from PWLEADS_ADMIN_PASSWORD, default 'admin')")
+    app.run(host=args.host, port=args.port, debug=args.debug)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pwleads",
@@ -205,6 +288,40 @@ def build_parser() -> argparse.ArgumentParser:
 
     st = sub.add_parser("stats", help="show pipeline summary")
     st.set_defaults(func=cmd_stats)
+
+    # --- business / web operations ---
+    sc = sub.add_parser("scan", help="refresh leads for an area or all areas")
+    sc.add_argument("location", nargs="?", help="location to scan, e.g. 'Kent, WA'")
+    sc.add_argument("--radius", type=float, default=8.0, help="radius km (default: 8)")
+    sc.add_argument("--all-areas", action="store_true",
+                    help="scan every subscribed service area instead")
+    sc.set_defaults(func=cmd_scan)
+
+    en = sub.add_parser("enrich", help="fill in missing phone/email/address (free)")
+    en.add_argument("--limit", type=int, default=50, help="max leads to enrich")
+    en.add_argument("--delay", type=float, default=1.0,
+                    help="seconds between requests (be polite; default: 1)")
+    en.set_defaults(func=cmd_enrich)
+
+    pl = sub.add_parser("plan", help="manage subscription plans")
+    plsub = pl.add_subparsers(dest="plan_cmd", required=True)
+    pls = plsub.add_parser("seed", help="seed the default plans")
+    pls.set_defaults(func=cmd_plan_seed)
+
+    co = sub.add_parser("contractor", help="manage contractor accounts")
+    cosub = co.add_subparsers(dest="contractor_cmd", required=True)
+    coa = cosub.add_parser("add", help="create a contractor account")
+    coa.add_argument("--name", required=True, help="business name")
+    coa.add_argument("--email", required=True)
+    coa.add_argument("--password", required=True)
+    coa.add_argument("--plan", help="optional plan name to subscribe to")
+    coa.set_defaults(func=cmd_contractor_add)
+
+    sv = sub.add_parser("serve", help="run the web app locally")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=5000)
+    sv.add_argument("--debug", action="store_true")
+    sv.set_defaults(func=cmd_serve)
 
     return p
 

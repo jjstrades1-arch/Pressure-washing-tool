@@ -94,6 +94,67 @@ e.g. one per city or per crew.
   Be reasonable — search the areas you actually work rather than scraping
   whole regions in a loop.
 
+## Run it as a business (subscription web app)
+
+`pwleads` also ships a small web app that turns the lead finder into a
+**subscription business**: pressure washing contractors sign up, subscribe to a
+monthly plan, and log in to see a fresh, ranked, contact-ready list of leads in
+their service area. You (the owner) keep the leads fresh; you make money on the
+subscriptions and never take a cut of anyone's jobs.
+
+> Payments are **simulated** in this version — subscribing activates instantly
+> with no charge. The billing layer (`pwleads/billing.py`) has a clean seam where
+> real Stripe drops in later with no rebuild.
+
+### Start it locally
+
+```bash
+pip install .[web]          # installs Flask (the CLI core stays zero-dependency)
+pwleads serve               # http://127.0.0.1:5000
+```
+
+Then, as the **owner**, seed the database and refresh leads:
+
+```bash
+pwleads plan seed                          # create Starter / Pro / Metro plans
+pwleads scan "Kent, WA" --radius 8         # pull fresh leads from OpenStreetMap
+pwleads enrich                             # fill in missing phone/email/address (free)
+```
+
+Or do it all from the browser: open `http://127.0.0.1:5000`, sign up as a
+contractor, subscribe to a plan, add your town as a service area, then visit
+`/admin` (password from `PWLEADS_ADMIN_PASSWORD`, default `admin`) to **Scan all
+areas** and **Enrich**. Subscribers immediately see ranked leads on their dashboard.
+
+### Plans (edit in `pwleads/db.py` → `DEFAULT_PLANS`)
+
+| Plan | Price | Radius | Areas | Min score | Leads/mo | Leads |
+|---|---|---|---|---|---|---|
+| Starter | $49/mo | 8 km | 1 | 80+ | 25 | shared |
+| Pro | $99/mo | 12 km | 2 | 60+ | 100 | shared |
+| Metro | $199/mo | 16 km | 3 | all | 400 | exclusive |
+
+### How the pieces fit
+
+- `auth.py` — contractor accounts (hashed passwords).
+- `billing.py` — `SimulatedBilling` now; `StripeBilling` later.
+- `entitlements.py` — the gate: what each subscriber may see (area + plan score +
+  monthly cap + exclusivity + active subscription).
+- `scan.py` — re-scan service areas, track lead freshness (`first_seen`/`last_seen`,
+  auto-deactivate closed businesses).
+- `enrich.py` — free contact enrichment (extra OSM tags, reverse-geocode, website scrape).
+- `web/` — the Flask app (signup → subscribe → dashboard → claim → export).
+
+### Owner CLI commands
+
+| Command | What it does |
+|---|---|
+| `pwleads serve` | run the web app locally |
+| `pwleads plan seed` | create the default subscription plans |
+| `pwleads scan <loc>` / `--all-areas` | refresh leads for an area / every subscribed area |
+| `pwleads enrich` | fill in missing phone/email/address (free) |
+| `pwleads contractor add --name --email --password [--plan]` | create an account from the CLI |
+
 ## Development
 
 ```bash

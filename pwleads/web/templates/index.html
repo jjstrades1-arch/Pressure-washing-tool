@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>More pressure washing jobs, on autopilot.</h1>
+  <p class="lead">
+    We find the local businesses that need pressure washing — gas stations,
+    restaurants, storefronts, parking lots and more — score them, and hand you
+    a fresh, ranked, contact-ready list every week. You just make the calls.
+  </p>
+  <a class="btn" href="{{ url_for('main.signup') }}">Start finding leads</a>
+</section>
+
+<section>
+  <h2>Plans</h2>
+  <div class="cards">
+    {% for p in plans %}
+      <div class="card">
+        <h3>{{ p['name'] }}</h3>
+        <p class="price">{{ p['price_monthly_cents'] | money }}<span>/mo</span></p>
+        <ul>
+          <li>{{ p['radius_km'] | round(0, 'floor') | int }} km service radius</li>
+          <li>Up to {{ p['max_areas'] }} service area(s)</li>
+          <li>{{ p['monthly_lead_cap'] }} leads / month</li>
+          <li>Leads scored {{ p['min_lead_score'] }}+</li>
+          <li>{{ p['exclusivity'] | capitalize }} leads</li>
+        </ul>
+        <a class="btn small" href="{{ url_for('main.signup') }}">Choose {{ p['name'] }}</a>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

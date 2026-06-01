@@ -16,11 +16,18 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
 ]
-# Zero runtime dependencies: standard library only.
+# The CLI core is zero-dependency (standard library only). The optional web
+# app pulls in Flask via the [web] extra: pip install .[web]
 dependencies = []
+
+[project.optional-dependencies]
+web = ["flask>=3.0"]
 
 [project.scripts]
 pwleads = "pwleads.cli:main"
 
 [tool.setuptools]
-packages = ["pwleads"]
+packages = ["pwleads", "pwleads.web"]
+
+[tool.setuptools.package-data]
+"pwleads.web" = ["templates/*.html", "static/*.css"]

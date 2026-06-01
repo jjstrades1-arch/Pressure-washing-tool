@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ lead['name'] }} — PowerLeads{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('main.dashboard') }}">&larr; Back to dashboard</a></p>
+<h1>{{ lead['name'] }}</h1>
+<p class="note">{{ lead['category'] }} · lead score {{ lead['score'] }} · {{ lead['distance_km'] }} km away</p>
+
+<div class="detail">
+  <dl>
+    <dt>Opportunity</dt><dd>{{ lead['note'] }}</dd>
+    <dt>Address</dt><dd>{{ lead['address'] or '—' }}{% if lead['city'] %}, {{ lead['city'] }}{% endif %}</dd>
+    <dt>Phone</dt><dd>{{ lead['phone'] or '—' }}</dd>
+    <dt>Email</dt><dd>{{ lead['email'] or '—' }}</dd>
+    <dt>Website</dt>
+    <dd>{% if lead['website'] %}<a href="{{ lead['website'] }}" target="_blank" rel="noopener">{{ lead['website'] }}</a>{% else %}—{% endif %}</dd>
+    <dt>Map</dt>
+    <dd><a target="_blank" rel="noopener"
+        href="https://www.openstreetmap.org/?mlat={{ lead['lat'] }}&mlon={{ lead['lon'] }}#map=18/{{ lead['lat'] }}/{{ lead['lon'] }}">Open in map</a></dd>
+  </dl>
+</div>
+
+<section class="panel">
+  <h2>Your pipeline for this lead</h2>
+  <form method="post" action="{{ url_for('main.update_claim', lead_id=lead['id']) }}" class="stack">
+    <label>Status
+      <select name="status">
+        {% for s in statuses %}
+          <option value="{{ s }}" {% if claim and claim['status'] == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Notes
+      <textarea name="notes" rows="3">{{ claim['notes'] if claim else '' }}</textarea>
+    </label>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</section>
+{% endblock %}

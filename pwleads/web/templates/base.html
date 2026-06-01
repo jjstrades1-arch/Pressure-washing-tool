@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PowerLeads{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('main.index') }}">💦 PowerLeads</a>
+    <nav>
+      {% if session.get('contractor_id') %}
+        <a href="{{ url_for('main.dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('main.plans') }}">Plans</a>
+        <form class="inline" method="post" action="{{ url_for('main.logout') }}">
+          <button class="link">Log out</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('main.plans') }}">Plans</a>
+        <a href="{{ url_for('main.login') }}">Log in</a>
+        <a class="btn small" href="{{ url_for('main.signup') }}">Sign up</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main class="wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="foot">
+    PowerLeads — pressure washing leads, fresh every week.
+  </footer>
+</body>
+</html>

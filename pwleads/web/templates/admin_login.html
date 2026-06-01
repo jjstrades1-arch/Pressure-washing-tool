@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Admin — PowerLeads{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Owner admin</h1>
+  <form method="post" class="stack">
+    <label>Admin password <input type="password" name="password" required></label>
+    <button class="btn" type="submit">Enter</button>
+  </form>
+</section>
+{% endblock %}

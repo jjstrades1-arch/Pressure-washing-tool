@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Admin panel — PowerLeads{% endblock %}
+{% block content %}
+<h1>Owner admin</h1>
+<p class="note">{{ contractors }} contractor(s) · {{ total }} active lead(s) in inventory</p>
+
+<section class="panel">
+  <h2>Refresh leads</h2>
+  <p>Re-scan every subscribed service area and enrich missing contact info.</p>
+  <div class="row">
+    <form method="post" action="{{ url_for('main.admin_scan') }}">
+      <button class="btn" type="submit">Scan all areas</button>
+    </form>
+    <form method="post" action="{{ url_for('main.admin_enrich') }}">
+      <button class="btn ghost" type="submit">Enrich leads</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Subscribed areas ({{ areas | length }})</h2>
+  <ul class="areas">
+    {% for a in areas %}<li>{{ a['label'] }} <span>({{ a['radius_km'] | round(0,'floor') | int }} km)</span></li>{% endfor %}
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Recent scans</h2>
+  {% if scans %}
+    <table class="leads">
+      <thead><tr><th>Area</th><th>Found</th><th>Added</th><th>Refreshed</th><th>When</th></tr></thead>
+      <tbody>
+        {% for s in scans %}
+          <tr>
+            <td>{{ s['area_label'] }}</td>
+            <td>{{ s['found'] }}</td>
+            <td>{{ s['added'] }}</td>
+            <td>{{ s['refreshed'] }}</td>
+            <td>{{ s['finished_at'] }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No scans yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
