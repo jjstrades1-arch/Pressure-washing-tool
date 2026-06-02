@@ -197,6 +197,18 @@ def add_area():
     return redirect(url_for("main.dashboard"))
 
 
+@bp.route("/areas/<int:area_id>/delete", methods=["POST"])
+@login_required
+def delete_area(area_id):
+    with _db() as conn:
+        ok = db.delete_service_area(conn, area_id, current_contractor_id())
+    if ok:
+        flash("Service area removed.", "ok")
+    else:
+        flash("Couldn't remove that area.", "error")
+    return redirect(url_for("main.dashboard"))
+
+
 # --------------------------------------------------------------------------- #
 # Dashboard & leads
 # --------------------------------------------------------------------------- #

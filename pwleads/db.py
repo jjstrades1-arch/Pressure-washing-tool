@@ -408,6 +408,20 @@ def all_service_areas(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM service_areas ORDER BY id").fetchall()
 
 
+def delete_service_area(
+    conn: sqlite3.Connection, area_id: int, contractor_id: int
+) -> bool:
+    """Delete a contractor's own service area. Returns True if one was removed.
+
+    Scoped to contractor_id so a contractor can never delete someone else's area.
+    """
+    cur = conn.execute(
+        "DELETE FROM service_areas WHERE id = ? AND contractor_id = ?",
+        (area_id, contractor_id),
+    )
+    return cur.rowcount > 0
+
+
 # --- subscriptions ---
 def create_subscription(
     conn: sqlite3.Connection,

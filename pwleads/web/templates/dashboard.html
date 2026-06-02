@@ -37,7 +37,13 @@
     {% if areas %}
       <ul class="areas">
         {% for a in areas %}
-          <li>{{ a['label'] }} <span>({{ a['radius_km'] | round(0,'floor') | int }} km)</span></li>
+          <li>{{ a['label'] }} <span>({{ a['radius_km'] | round(0,'floor') | int }} km)</span>
+            <form class="inline" method="post"
+                  action="{{ url_for('main.delete_area', area_id=a['id']) }}"
+                  onsubmit="return confirm('Remove {{ a['label'] }}? Its leads will no longer show.');">
+              <button class="x" title="Remove area" type="submit">&times;</button>
+            </form>
+          </li>
         {% endfor %}
       </ul>
     {% else %}

@@ -310,6 +310,25 @@ class EnrichPipelineTests(FixtureMixin):
             self.assertEqual(enrich.pending_leads(c, 10), [])
 
 
+class ServiceAreaTests(FixtureMixin):
+    def test_add_then_delete(self):
+        with db.connect(self.path) as c:
+            cid = auth.register(c, "Mike", "m@example.com", "secret123")
+            aid = db.add_service_area(c, cid, "Kent", 47.38, -122.23, 8.0)
+            self.assertEqual(len(db.list_service_areas(c, cid)), 1)
+            self.assertTrue(db.delete_service_area(c, aid, cid))
+            self.assertEqual(db.list_service_areas(c, cid), [])
+
+    def test_cannot_delete_another_contractors_area(self):
+        with db.connect(self.path) as c:
+            a = auth.register(c, "A", "a@example.com", "secret123")
+            b = auth.register(c, "B", "b@example.com", "secret123")
+            aid = db.add_service_area(c, a, "Kent", 47.38, -122.23, 8.0)
+            # B tries to delete A's area -> refused, area still there.
+            self.assertFalse(db.delete_service_area(c, aid, b))
+            self.assertEqual(len(db.list_service_areas(c, a)), 1)
+
+
 class ConfidenceTests(unittest.TestCase):
     def test_complete_independent_is_high(self):
         now = datetime.now(timezone.utc)
