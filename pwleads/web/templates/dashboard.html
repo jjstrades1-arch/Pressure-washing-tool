@@ -24,8 +24,7 @@
 
   <p class="note">
     Plan: <strong>{{ sub['plan_name'] }}</strong> ·
-    unlocked <strong>{{ used }}/{{ cap }}</strong> leads this month ·
-    showing leads scored {{ sub['min_lead_score'] }}+
+    unlocked <strong>{{ used }}/{{ cap }}</strong> leads this month
   </p>
 
   {% if new_count %}
@@ -65,14 +64,11 @@
          up to {{ cap }} per month on the {{ sub['plan_name'] }} plan.</p>
       <table class="leads">
         <thead>
-          <tr><th>Value</th><th>Confidence</th><th>Name</th><th>Category</th><th>Distance</th><th>Status</th><th></th></tr>
+          <tr><th>Name</th><th>Category</th><th>Distance</th><th>Status</th><th></th></tr>
         </thead>
         <tbody>
           {% for l in leads %}
             <tr>
-              <td class="score">{{ l['score'] }}</td>
-              <td><span class="tag conf-{{ l['confidence']['label'] | lower }}"
-                        title="{{ l['confidence']['reasons'] | join(' · ') }}">{{ l['confidence']['label'] }}</span></td>
               <td>
                 <a href="{{ url_for('main.lead_detail', lead_id=l['id']) }}">{{ l['name'] }}</a>
                 {% if l['is_new'] %}<span class="tag good">new</span>{% endif %}

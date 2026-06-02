@@ -18,7 +18,7 @@ import math
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-from . import db, quality
+from . import db
 
 EARTH_KM = 6371.0088
 # How long an actively-worked shared lead stays reserved for one contractor.
@@ -110,7 +110,6 @@ def candidate_leads(conn: sqlite3.Connection, contractor_id: int) -> list[dict]:
             item["is_new"] = bool(prev_login and row["first_seen"]
                                   and row["first_seen"] > prev_login)
             item["revealed"] = lead_id in revealed
-            item["confidence"] = quality.confidence(row)
             chosen[lead_id] = item
 
     leads = sorted(

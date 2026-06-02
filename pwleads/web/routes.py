@@ -259,8 +259,7 @@ def lead_detail(lead_id):
     email = outreach.email_template(lead["name"], lead["category"], company)
     return render_template(
         "lead.html", lead=lead, claim=claim, hint=hint, revealed=revealed,
-        used=used, cap=cap, script=script, email=email,
-        confidence=quality.confidence(lead), report=report,
+        used=used, cap=cap, script=script, email=email, report=report,
         report_reasons=guarantee.REASONS, statuses=scoring.STATUSES,
     )
 

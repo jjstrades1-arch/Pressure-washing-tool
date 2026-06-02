@@ -5,13 +5,7 @@
 <h1>{{ lead['name'] }}
   {% if lead['is_chain'] %}<span class="tag chain">⛓ chain</span>{% endif %}
 </h1>
-<p class="note">{{ lead['category'] }} · value score {{ lead['score'] }} · {{ lead['distance_km'] }} km away</p>
-
-<div class="conf-panel conf-{{ confidence['label'] | lower }}">
-  <strong>Confidence: {{ confidence['label'] }}</strong> ({{ confidence['score'] }}/100)
-  — how likely this lead is real &amp; reachable.
-  <ul>{% for r in confidence['reasons'] %}<li>{{ r }}</li>{% endfor %}</ul>
-</div>
+<p class="note">{{ lead['category'] }} · {{ lead['distance_km'] }} km away</p>
 
 <div class="approach">💡 <strong>Best approach:</strong> {{ hint }}</div>
 
