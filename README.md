@@ -94,6 +94,21 @@ e.g. one per city or per crew.
   Be reasonable — search the areas you actually work rather than scraping
   whole regions in a loop.
 
+## Easiest way to start it
+
+1. Make sure **Python** is installed (from [python.org](https://www.python.org/downloads/)).
+2. **Double-click the launcher** in the project folder:
+   - **Mac:** `start.command`
+   - **Windows:** `start.bat`
+
+That's it — it installs what it needs and opens the app in your web browser at
+`http://127.0.0.1:5000`. Sign up, pick a plan, add your city, and leads appear
+automatically. Owner admin is at `/admin` (password `admin`). Close the terminal
+window (or press `Ctrl+C`) to stop it.
+
+*(Mac note: the first time, if double-clicking is blocked, right-click
+`start.command` → Open → Open.)*
+
 ## Run it as a business (subscription web app)
 
 `pwleads` also ships a small web app that turns the lead finder into a

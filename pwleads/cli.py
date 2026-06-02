@@ -234,8 +234,15 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from .web import create_app
 
     app = create_app(args.db)
-    print(f"Starting PowerLeads web app at http://{args.host}:{args.port}")
-    print("Admin panel: /admin  (password from PWLEADS_ADMIN_PASSWORD, default 'admin')")
+    url = f"http://{args.host}:{args.port}"
+    print(f"\n  PowerLeads is running.  Open this in your browser:\n\n      {url}\n")
+    print("  Admin panel: /admin  (password from PWLEADS_ADMIN_PASSWORD, default 'admin')")
+    print("  Press Ctrl+C here to stop.\n")
+    if not args.no_browser:
+        import threading
+        import webbrowser
+
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     app.run(host=args.host, port=args.port, debug=args.debug)
     return 0
 
@@ -321,6 +328,8 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=5000)
     sv.add_argument("--debug", action="store_true")
+    sv.add_argument("--no-browser", action="store_true",
+                    help="don't open the browser automatically")
     sv.set_defaults(func=cmd_serve)
 
     return p
