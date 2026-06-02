@@ -14,7 +14,6 @@
         <li>{{ p['radius_km'] | round(0, 'floor') | int }} km service radius</li>
         <li>Up to {{ p['max_areas'] }} service area(s)</li>
         <li>{{ p['monthly_lead_cap'] }} leads / month</li>
-        <li>Leads scored {{ p['min_lead_score'] }}+</li>
         <li>{{ p['exclusivity'] | capitalize }} leads</li>
       </ul>
       {% if session.get('contractor_id') %}
