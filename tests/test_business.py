@@ -329,6 +329,46 @@ class ServiceAreaTests(FixtureMixin):
             self.assertEqual(len(db.list_service_areas(c, a)), 1)
 
 
+class AccountTests(FixtureMixin):
+    def test_rename(self):
+        with db.connect(self.path) as c:
+            cid = auth.register(c, "Old Name", "m@example.com", "secret123")
+            auth.rename(c, cid, "New Name")
+            self.assertEqual(db.get_contractor(c, cid)["business_name"], "New Name")
+            with self.assertRaises(auth.AuthError):
+                auth.rename(c, cid, "   ")
+
+    def test_change_password(self):
+        with db.connect(self.path) as c:
+            cid = auth.register(c, "Mike", "m@example.com", "secret123")
+            with self.assertRaises(auth.AuthError):
+                auth.change_password(c, cid, "wrongold", "newpass1")
+            with self.assertRaises(auth.AuthError):
+                auth.change_password(c, cid, "secret123", "short")
+            auth.change_password(c, cid, "secret123", "newpass1")
+            self.assertIsNone(auth.authenticate(c, "m@example.com", "secret123"))
+            self.assertIsNotNone(auth.authenticate(c, "m@example.com", "newpass1"))
+
+
+class PipelineDataTests(FixtureMixin):
+    def test_counts_and_claimed_leads(self):
+        with db.connect(self.path) as c:
+            db.seed_plans(c)
+            cid = auth.register(c, "Mike", "m@example.com", "secret123")
+            db.add_service_area(c, cid, "Kent", 47.38, -122.23, 8.0)
+            billing.get_billing().subscribe(c, cid, 2)
+            scan.scan_area(c, "Kent", 47.38, -122.23, 8.0, finder=fake_finder())
+            ids = [l["id"] for l in entitlements.candidate_leads(c, cid)]
+            db.upsert_claim(c, ids[0], cid, status="contacted")
+            db.upsert_claim(c, ids[1], cid, status="won", job_value_cents=150000)
+            counts = db.pipeline_counts(c, cid)
+            self.assertEqual(counts.get("contacted"), 1)
+            self.assertEqual(counts.get("won"), 1)
+            claimed = db.claimed_leads(c, cid)
+            self.assertEqual(len(claimed), 2)
+            self.assertIn("claim_status", claimed[0].keys())
+
+
 class ConfidenceTests(unittest.TestCase):
     def test_complete_independent_is_high(self):
         now = datetime.now(timezone.utc)

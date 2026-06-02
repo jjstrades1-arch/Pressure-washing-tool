@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Account — PowerLeads{% endblock %}
+{% block content %}
+<h1>Account</h1>
+
+<div class="detail-grid">
+  <div>
+    <section class="panel">
+      <h2>Business profile</h2>
+      <form method="post" action="{{ url_for('main.account_name') }}" class="stack">
+        <label>Business name
+          <input name="business_name" value="{{ contractor['business_name'] }}" required>
+        </label>
+        <p class="note">Email: {{ contractor['email'] }}</p>
+        <button class="btn" type="submit">Save name</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Change password</h2>
+      <form method="post" action="{{ url_for('main.account_password') }}" class="stack">
+        <label>Current password <input type="password" name="current_password" required></label>
+        <label>New password <small>(6+ characters)</small> <input type="password" name="new_password" required></label>
+        <button class="btn" type="submit">Update password</button>
+      </form>
+    </section>
+  </div>
+
+  <div>
+    <section class="panel">
+      <h2>Subscription</h2>
+      {% if sub %}
+        <p>You're on the <strong>{{ sub['plan_name'] }}</strong> plan — {{ sub['price_monthly_cents'] | money }}/mo.</p>
+        <ul class="plan-list">
+          <li>{{ sub['plan_radius_km'] | round(0,'floor') | int }} km radius</li>
+          <li>Up to {{ sub['max_areas'] }} service area(s)</li>
+          <li>{{ sub['monthly_lead_cap'] }} leads / month</li>
+          <li>{{ sub['exclusivity'] | capitalize }} leads</li>
+        </ul>
+        <div class="row">
+          <a class="btn ghost small" href="{{ url_for('main.plans') }}">Change plan</a>
+          <form method="post" action="{{ url_for('main.account_cancel') }}" onsubmit="return confirm('Cancel your subscription? You will keep access until it lapses.');">
+            <button class="btn danger small" type="submit">Cancel subscription</button>
+          </form>
+        </div>
+      {% else %}
+        <p class="note">No active subscription.</p>
+        <a class="btn" href="{{ url_for('main.plans') }}">Choose a plan</a>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>Service areas</h2>
+      {% if areas %}
+        <ul class="areas">
+          {% for a in areas %}<li>{{ a['label'].split(',')[0] }} <span>({{ a['radius_km'] | round(0,'floor') | int }} km)</span></li>{% endfor %}
+        </ul>
+      {% else %}
+        <p class="note">None yet.</p>
+      {% endif %}
+      <a class="btn ghost small" href="{{ url_for('main.dashboard') }}">Manage on dashboard</a>
+    </section>
+  </div>
+</div>
+{% endblock %}

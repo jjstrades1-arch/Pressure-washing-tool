@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import io
 import threading
+from datetime import datetime, timezone
 
 from flask import (
     Blueprint, Response, abort, current_app, flash, redirect,
@@ -62,7 +63,54 @@ def admin_required(view):
 
 @bp.app_template_filter("money")
 def money(cents):
-    return f"${cents / 100:,.0f}"
+    return f"${(cents or 0) / 100:,.0f}"
+
+
+_CATEGORY_ICONS = [
+    ("gas", "⛽"), ("fuel", "⛽"), ("fast food", "🍔"), ("restaurant", "🍽️"),
+    ("cafe", "☕"), ("coffee", "☕"), ("bar", "🍺"), ("pub", "🍺"),
+    ("food", "🍔"), ("hotel", "🏨"), ("motel", "🏨"), ("dealership", "🚗"),
+    ("auto", "🔧"), ("tire", "🛞"), ("car wash", "🚿"), ("parking", "🅿️"),
+    ("mall", "🛍️"), ("supermarket", "🛒"), ("department", "🏬"),
+    ("convenience", "🏪"), ("hardware", "🔨"), ("improvement", "🔨"),
+    ("wholesale", "📦"), ("warehouse", "📦"), ("industrial", "🏭"),
+    ("school", "🏫"), ("hospital", "🏥"), ("clinic", "🏥"),
+    ("church", "⛪"), ("worship", "⛪"), ("office", "🏢"), ("building", "🏢"),
+]
+
+
+@bp.app_template_filter("icon")
+def category_icon(category):
+    cat = (category or "").lower()
+    for key, emoji in _CATEGORY_ICONS:
+        if key in cat:
+            return emoji
+    return "📍"
+
+
+@bp.app_template_filter("timeago")
+def timeago(iso):
+    """Human-friendly relative time, e.g. 'just now', '3 days ago'."""
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (ValueError, TypeError):
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    secs = (datetime.now(timezone.utc) - dt).total_seconds()
+    if secs < 60:
+        return "just now"
+    for unit, size in (("min", 60), ("hour", 3600), ("day", 86400),
+                       ("week", 604800), ("month", 2629800)):
+        if secs < size * (60 if unit == "min" else 24 if unit == "hour"
+                          else 7 if unit == "day" else 4.34 if unit == "week"
+                          else 12):
+            n = int(secs // size)
+            return f"{n} {unit}{'s' if n != 1 else ''} ago"
+    years = int(secs // 31557600)
+    return f"{years} year{'s' if years != 1 else ''} ago"
 
 
 # --------------------------------------------------------------------------- #
@@ -216,26 +264,134 @@ def delete_area(area_id):
 @login_required
 def dashboard():
     cid = current_contractor_id()
+    q = request.args.get("q", "").strip()
+    category = request.args.get("category", "").strip()
+    sort = request.args.get("sort", "best")
+    status = request.args.get("status", "").strip()
+
     with _db() as conn:
         contractor = db.get_contractor(conn, cid)
         sub = entitlements.access(conn, cid)
         areas = db.list_service_areas(conn, cid)
-        leads = entitlements.candidate_leads(conn, cid) if sub else []
+        all_leads = entitlements.candidate_leads(conn, cid) if sub else []
         roi = entitlements.roi(conn, cid) if sub else None
         used, cap = entitlements.reveal_usage(conn, cid) if sub else (0, 0)
-    new_count = sum(1 for l in leads if l["is_new"])
+        pcounts = db.pipeline_counts(conn, cid)
+
+    categories = sorted({l["category"] for l in all_leads if l["category"]})
+    leads = all_leads
+    if q:
+        ql = q.lower()
+        leads = [l for l in leads
+                 if ql in l["name"].lower() or ql in (l["category"] or "").lower()]
+    if category:
+        leads = [l for l in leads if l["category"] == category]
+    if status == "unworked":
+        leads = [l for l in leads if not l["claim_status"]]
+    elif status:
+        leads = [l for l in leads if l["claim_status"] == status]
+    if sort == "distance":
+        leads = sorted(leads, key=lambda l: l["distance_km"])
+    elif sort == "new":
+        leads = sorted(leads, key=lambda l: (l["first_seen"] or ""), reverse=True)
+
+    stats = {
+        "available": len(all_leads),
+        "used": used,
+        "cap": cap,
+        "in_pipeline": pcounts.get("contacted", 0) + pcounts.get("quoted", 0),
+        "won_count": roi["won_count"] if roi else 0,
+        "won_cents": roi["won_cents"] if roi else 0,
+    }
     return render_template(
         "dashboard.html",
-        contractor=contractor,
-        sub=sub,
-        areas=areas,
-        leads=leads,
-        roi=roi,
-        used=used,
-        cap=cap,
-        new_count=new_count,
+        contractor=contractor, sub=sub, areas=areas, leads=leads,
+        roi=roi, used=used, cap=cap, stats=stats, categories=categories,
+        new_count=sum(1 for l in all_leads if l["is_new"]),
+        filters={"q": q, "category": category, "sort": sort, "status": status},
         statuses=scoring.STATUSES,
     )
+
+
+@bp.route("/pipeline")
+@login_required
+def pipeline():
+    cid = current_contractor_id()
+    with _db() as conn:
+        contractor = db.get_contractor(conn, cid)
+        sub = entitlements.access(conn, cid)
+        claims = db.claimed_leads(conn, cid)
+    # Group claimed leads by pipeline status for a board view.
+    groups = {s: [] for s in scoring.STATUSES}
+    won_cents = 0
+    for row in claims:
+        groups.setdefault(row["claim_status"], []).append(row)
+        if row["claim_status"] == "won":
+            won_cents += row["job_value_cents"] or 0
+    return render_template(
+        "pipeline.html", contractor=contractor, sub=sub, groups=groups,
+        statuses=scoring.STATUSES, total=len(claims), won_cents=won_cents,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Account / settings
+# --------------------------------------------------------------------------- #
+@bp.route("/account")
+@login_required
+def account():
+    cid = current_contractor_id()
+    with _db() as conn:
+        contractor = db.get_contractor(conn, cid)
+        sub = entitlements.access(conn, cid)
+        areas = db.list_service_areas(conn, cid)
+        plans = db.list_plans(conn)
+    return render_template(
+        "account.html", contractor=contractor, sub=sub, areas=areas, plans=plans
+    )
+
+
+@bp.route("/account/name", methods=["POST"])
+@login_required
+def account_name():
+    with _db() as conn:
+        try:
+            auth.rename(conn, current_contractor_id(),
+                        request.form.get("business_name", ""))
+            flash("Business name updated.", "ok")
+        except auth.AuthError as exc:
+            flash(str(exc), "error")
+    return redirect(url_for("main.account"))
+
+
+@bp.route("/account/password", methods=["POST"])
+@login_required
+def account_password():
+    with _db() as conn:
+        try:
+            auth.change_password(
+                conn, current_contractor_id(),
+                request.form.get("current_password", ""),
+                request.form.get("new_password", ""),
+            )
+            flash("Password changed.", "ok")
+        except auth.AuthError as exc:
+            flash(str(exc), "error")
+    return redirect(url_for("main.account"))
+
+
+@bp.route("/account/cancel", methods=["POST"])
+@login_required
+def account_cancel():
+    cid = current_contractor_id()
+    with _db() as conn:
+        sub = entitlements.access(conn, cid)
+        if sub is not None:
+            billing.get_billing().cancel(conn, sub["id"])
+            flash("Subscription cancelled. You can re-subscribe anytime.", "ok")
+        else:
+            flash("You don't have an active subscription.", "error")
+    return redirect(url_for("main.account"))
 
 
 @bp.route("/lead/<int:lead_id>")

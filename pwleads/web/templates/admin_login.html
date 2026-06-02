@@ -1,11 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Admin — PowerLeads{% endblock %}
+{% block title %}Owner admin — PowerLeads{% endblock %}
 {% block content %}
-<section class="narrow">
-  <h1>Owner admin</h1>
-  <form method="post" class="stack">
-    <label>Admin password <input type="password" name="password" required></label>
-    <button class="btn" type="submit">Enter</button>
-  </form>
-</section>
+<div class="narrow">
+  <div class="card" style="padding:26px">
+    <h1>Owner admin</h1>
+    <p class="note">Refresh leads, run enrichment, and review bad-lead reports.</p>
+    <form method="post" class="stack" style="margin-top:14px">
+      <label>Admin password <input type="password" name="password" required></label>
+      <button class="btn block" type="submit">Enter</button>
+    </form>
+  </div>
+</div>
 {% endblock %}

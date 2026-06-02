@@ -1,31 +1,61 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="hero">
+  <p class="eyebrow">Pressure washing lead generation</p>
   <h1>More pressure washing jobs, on autopilot.</h1>
   <p class="lead">
     We find the local businesses that need pressure washing — gas stations,
     restaurants, storefronts, parking lots and more — and hand you a fresh,
     contact-ready list every week. You just make the calls.
   </p>
-  <a class="btn" href="{{ url_for('main.signup') }}">Start finding leads</a>
+  <div class="row" style="justify-content:center">
+    <a class="btn" href="{{ url_for('main.signup') }}">Start finding leads →</a>
+    <a class="btn ghost" href="#plans">See pricing</a>
+  </div>
 </section>
 
 <section>
-  <h2>Plans</h2>
+  <div class="steps">
+    <div class="card"><div class="n">1</div><h3>Tell us your town</h3>
+      <p class="note">Add your service area and we instantly find local businesses that need exterior cleaning.</p></div>
+    <div class="card"><div class="n">2</div><h3>Get ranked leads</h3>
+      <p class="note">Fresh, contact-ready leads with phone, email, a map, and a ready-to-use call script.</p></div>
+    <div class="card"><div class="n">3</div><h3>Win the work</h3>
+      <p class="note">Track each lead from contacted to won, and see your return right on the dashboard.</p></div>
+  </div>
+</section>
+
+<section id="plans">
+  <h2 class="center">Simple pricing</h2>
+  <p class="note center">Pay monthly. Cancel anytime. Every bad lead is credited back.</p>
   <div class="cards">
     {% for p in plans %}
-      <div class="card">
+      <div class="card {{ 'featured' if loop.index == 2 }}" style="padding:22px">
+        {% if loop.index == 2 %}<p class="eyebrow">Most popular</p>{% endif %}
         <h3>{{ p['name'] }}</h3>
         <p class="price">{{ p['price_monthly_cents'] | money }}<span>/mo</span></p>
-        <ul>
+        <ul class="plan-list">
           <li>{{ p['radius_km'] | round(0, 'floor') | int }} km service radius</li>
           <li>Up to {{ p['max_areas'] }} service area(s)</li>
           <li>{{ p['monthly_lead_cap'] }} leads / month</li>
           <li>{{ p['exclusivity'] | capitalize }} leads</li>
+          <li>Credit-back guarantee</li>
         </ul>
-        <a class="btn small" href="{{ url_for('main.signup') }}">Choose {{ p['name'] }}</a>
+        <a class="btn block {{ '' if loop.index == 2 else 'ghost' }}" href="{{ url_for('main.signup') }}">Get {{ p['name'] }}</a>
       </div>
     {% endfor %}
+  </div>
+</section>
+
+<section style="margin-top:40px">
+  <h2 class="center">Questions</h2>
+  <div class="faq">
+    <details><summary>Where do the leads come from?</summary>
+      <p class="note">Real local businesses from public map data — the kinds of properties that routinely need pressure washing, ranked and ready to contact.</p></details>
+    <details><summary>What if a lead is bad?</summary>
+      <p class="note">If a number's dead or a business has closed, report it and your unlock is credited straight back. You only pay for usable leads.</p></details>
+    <details><summary>Do I have to sign a contract?</summary>
+      <p class="note">No. It's month-to-month and you can cancel anytime from your account page.</p></details>
   </div>
 </section>
 {% endblock %}

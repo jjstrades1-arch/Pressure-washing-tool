@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Pipeline — PowerLeads{% endblock %}
+{% block content %}
+<div class="row-between">
+  <h1>Pipeline</h1>
+  <span class="badge">{{ total }} deal(s) · {{ won_cents | money }} won</span>
+</div>
+
+{% if total == 0 %}
+  <div class="empty panel">
+    <p>No deals yet. Open a lead and set its status to start tracking it here.</p>
+    <a class="btn" href="{{ url_for('main.dashboard') }}">Browse leads</a>
+  </div>
+{% else %}
+  <div class="board">
+    {% for s in ['new','contacted','quoted','won','lost'] %}
+      <div class="col">
+        <h3>{{ s }} <span class="count">{{ groups[s] | length }}</span></h3>
+        {% for d in groups[s] %}
+          <div class="deal">
+            <a href="{{ url_for('main.lead_detail', lead_id=d['id']) }}">{{ d['category'] | icon }} {{ d['name'] }}</a>
+            <div class="meta">
+              {{ d['category'] }}
+              {% if s == 'won' and d['job_value_cents'] %} · {{ d['job_value_cents'] | money }}{% endif %}
+              · {{ d['claim_updated'] | timeago }}
+            </div>
+            {% if d['claim_notes'] %}<div class="meta">📝 {{ d['claim_notes'] }}</div>{% endif %}
+          </div>
+        {% else %}
+          <p class="note" style="font-size:.82rem">—</p>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

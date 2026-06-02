@@ -1,34 +1,41 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — PowerLeads{% endblock %}
+{% block title %}Leads — PowerLeads{% endblock %}
 {% block content %}
-<h1>{{ contractor['business_name'] }}</h1>
+<div class="row-between">
+  <h1>Hi, {{ contractor['business_name'] }}</h1>
+  {% if sub %}<span class="badge">{{ sub['plan_name'] }} plan</span>{% endif %}
+</div>
 
 {% if not sub %}
   <div class="lock">
     <h2>Your account is not active</h2>
-    <p>Subscribe to a plan to unlock fresh leads in your area.</p>
+    <p class="note">Subscribe to a plan to unlock fresh leads in your area.</p>
     <a class="btn" href="{{ url_for('main.plans') }}">See plans</a>
   </div>
 {% else %}
-  <div class="roi">
-    {% if roi['won_count'] %}
-      💰 You've won <strong>{{ roi['won_cents'] | money }}</strong> across
-      {{ roi['won_count'] }} job(s) from these leads — your {{ roi['plan_name'] }}
-      plan is {{ roi['price_cents'] | money }}/mo.
-    {% else %}
-      💡 Tip: when you win a job, open the lead and mark it <strong>won</strong>
-      with its dollar value — we'll track your return vs. the
-      {{ roi['price_cents'] | money }}/mo subscription here.
-    {% endif %}
+
+  {% if roi['won_count'] %}
+    <div class="roi">💰 You've won <strong>{{ roi['won_cents'] | money }}</strong> across
+      {{ roi['won_count'] }} job(s) — your {{ sub['plan_name'] }} plan is {{ roi['price_cents'] | money }}/mo.</div>
+  {% endif %}
+
+  <div class="stats">
+    <div class="stat"><div class="k">Leads available</div><div class="v">{{ stats['available'] }}</div></div>
+    <div class="stat"><div class="k">Unlocked this month</div><div class="v">{{ stats['used'] }} <small>/ {{ stats['cap'] }}</small></div></div>
+    <div class="stat"><div class="k">In pipeline</div><div class="v">{{ stats['in_pipeline'] }}</div></div>
+    <div class="stat accent"><div class="k">Jobs won</div><div class="v">{{ stats['won_cents'] | money }} <small>· {{ stats['won_count'] }}</small></div></div>
   </div>
 
-  <p class="note">
-    Plan: <strong>{{ sub['plan_name'] }}</strong> ·
-    unlocked <strong>{{ used }}/{{ cap }}</strong> leads this month
-  </p>
-
-  {% if new_count %}
-    <div class="flash ok">🆕 {{ new_count }} new lead(s) since your last visit.</div>
+  {% if not areas or stats['used'] == 0 %}
+    <div class="panel">
+      <h2>Getting started</h2>
+      <ul class="checklist">
+        <li class="done"><span class="mark">✓</span><span>Create your account</span></li>
+        <li class="done"><span class="mark">✓</span><span>Subscribe to a plan</span></li>
+        <li class="{{ 'done' if areas }}"><span class="mark">{{ '✓' if areas }}</span><span>Add your service area (below)</span></li>
+        <li class="{{ 'done' if stats['used'] }}"><span class="mark">{{ '✓' if stats['used'] }}</span><span>Open a lead to unlock its contact info</span></li>
+      </ul>
+    </div>
   {% endif %}
 
   <section class="panel">
@@ -36,17 +43,16 @@
     {% if areas %}
       <ul class="areas">
         {% for a in areas %}
-          <li>{{ a['label'] }} <span>({{ a['radius_km'] | round(0,'floor') | int }} km)</span>
-            <form class="inline" method="post"
-                  action="{{ url_for('main.delete_area', area_id=a['id']) }}"
-                  onsubmit="return confirm('Remove {{ a['label'] }}? Its leads will no longer show.');">
-              <button class="x" title="Remove area" type="submit">&times;</button>
+          <li>{{ a['label'].split(',')[0] }} <span>({{ a['radius_km'] | round(0,'floor') | int }} km)</span>
+            <form class="inline" method="post" action="{{ url_for('main.delete_area', area_id=a['id']) }}"
+                  onsubmit="return confirm('Remove {{ a['label'].split(',')[0] }}?');">
+              <button class="x" title="Remove" type="submit">&times;</button>
             </form>
           </li>
         {% endfor %}
       </ul>
     {% else %}
-      <p>No service areas yet — add the town you work in to get leads.</p>
+      <p class="note">No service areas yet — add the town you work in to get leads.</p>
     {% endif %}
     <form class="inline-form" method="post" action="{{ url_for('main.add_area') }}">
       <input name="location" placeholder="e.g. Kent, WA" required>
@@ -56,38 +62,69 @@
 
   <section class="panel">
     <div class="row-between">
-      <h2>Leads ({{ leads | length }})</h2>
-      {% if leads %}<a class="btn small ghost" href="{{ url_for('main.export_csv') }}">Export unlocked</a>{% endif %}
+      <h2>Your leads</h2>
+      {% if stats['available'] %}<a class="btn small ghost" href="{{ url_for('main.export_csv') }}">⬇ Export unlocked</a>{% endif %}
     </div>
+
+    {% if new_count %}<div class="roi" style="background:var(--surface-2);border-color:var(--line);color:var(--ink)">🆕 {{ new_count }} new lead(s) since your last visit.</div>{% endif %}
+
+    <div class="chips">
+      <a class="chip {{ 'active' if not filters['status'] }}" href="{{ url_for('main.dashboard', q=filters['q'], category=filters['category'], sort=filters['sort']) }}">All</a>
+      <a class="chip {{ 'active' if filters['status']=='unworked' }}" href="{{ url_for('main.dashboard', q=filters['q'], category=filters['category'], sort=filters['sort'], status='unworked') }}">Not contacted</a>
+      <a class="chip {{ 'active' if filters['status']=='contacted' }}" href="{{ url_for('main.dashboard', q=filters['q'], category=filters['category'], sort=filters['sort'], status='contacted') }}">Contacted</a>
+      <a class="chip {{ 'active' if filters['status']=='quoted' }}" href="{{ url_for('main.dashboard', q=filters['q'], category=filters['category'], sort=filters['sort'], status='quoted') }}">Quoted</a>
+      <a class="chip {{ 'active' if filters['status']=='won' }}" href="{{ url_for('main.dashboard', q=filters['q'], category=filters['category'], sort=filters['sort'], status='won') }}">Won</a>
+    </div>
+
+    <form class="toolbar" method="get" action="{{ url_for('main.dashboard') }}">
+      <input id="lead-search" class="grow" type="text" name="q" value="{{ filters['q'] }}" placeholder="🔍 Search leads…" autocomplete="off">
+      <input type="hidden" name="status" value="{{ filters['status'] }}">
+      <select name="category" onchange="this.form.submit()">
+        <option value="">All categories</option>
+        {% for c in categories %}<option value="{{ c }}" {{ 'selected' if c==filters['category'] }}>{{ c }}</option>{% endfor %}
+      </select>
+      <select name="sort" onchange="this.form.submit()">
+        <option value="best" {{ 'selected' if filters['sort']=='best' }}>Best match</option>
+        <option value="distance" {{ 'selected' if filters['sort']=='distance' }}>Nearest</option>
+        <option value="new" {{ 'selected' if filters['sort']=='new' }}>Newest</option>
+      </select>
+      <button class="btn small" type="submit">Go</button>
+    </form>
+
     {% if leads %}
-      <p class="note">Contact details unlock when you open a lead. You can unlock
-         up to {{ cap }} per month on the {{ sub['plan_name'] }} plan.</p>
-      <table class="leads">
-        <thead>
-          <tr><th>Name</th><th>Category</th><th>Distance</th><th>Status</th><th></th></tr>
-        </thead>
-        <tbody>
-          {% for l in leads %}
-            <tr>
-              <td>
-                <a href="{{ url_for('main.lead_detail', lead_id=l['id']) }}">{{ l['name'] }}</a>
-                {% if l['is_new'] %}<span class="tag good">new</span>{% endif %}
-                {% if l['is_chain'] %}<span class="tag chain">⛓</span>{% endif %}
-              </td>
-              <td>{{ l['category'] }}</td>
-              <td>{{ l['distance_km'] }} km</td>
-              <td><span class="badge {{ l['claim_status'] or 'none' }}">{{ l['claim_status'] or 'new' }}</span></td>
-              <td>
-                {% if l['revealed'] %}<span class="tag good">✓ unlocked</span>
-                {% else %}<a class="tag" href="{{ url_for('main.lead_detail', lead_id=l['id']) }}">🔒 unlock</a>{% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="table-wrap">
+        <table class="leads">
+          <thead><tr><th>Name</th><th>Category</th><th>Distance</th><th>Added</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for l in leads %}
+              <tr data-search="{{ (l['name'] ~ ' ' ~ l['category']) | lower }}">
+                <td class="lead-name">
+                  <a href="{{ url_for('main.lead_detail', lead_id=l['id']) }}"><span class="ic">{{ l['category'] | icon }}</span>{{ l['name'] }}</a>
+                  {% if l['is_new'] %}<span class="tag good">new</span>{% endif %}
+                  {% if l['is_chain'] %}<span class="tag chain">⛓</span>{% endif %}
+                </td>
+                <td>{{ l['category'] }}</td>
+                <td>{{ l['distance_km'] }} km</td>
+                <td class="muted">{{ l['first_seen'] | timeago }}</td>
+                <td><span class="badge {{ l['claim_status'] or 'none' }}">{{ l['claim_status'] or 'new' }}</span></td>
+                <td>
+                  {% if l['revealed'] %}<span class="tag good">✓ unlocked</span>
+                  {% else %}<a class="chip" href="{{ url_for('main.lead_detail', lead_id=l['id']) }}">🔒 unlock</a>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="note" style="margin-top:10px">Showing {{ leads|length }} lead(s). Contact details unlock when you open a lead ({{ stats['used'] }}/{{ stats['cap'] }} used this month).</p>
     {% else %}
-      <p>No leads yet. Add a service area above — we'll start finding leads
-         automatically, or your provider can run a refresh.</p>
+      <div class="empty">
+        {% if filters['q'] or filters['category'] or filters['status'] %}
+          <p>No leads match those filters. <a href="{{ url_for('main.dashboard') }}">Clear filters</a></p>
+        {% else %}
+          <p>No leads yet. Add a service area above — we'll start finding leads automatically.</p>
+        {% endif %}
+      </div>
     {% endif %}
   </section>
 {% endif %}

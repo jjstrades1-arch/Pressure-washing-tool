@@ -56,3 +56,28 @@ def authenticate(
     if not check_password_hash(contractor["password_hash"], password or ""):
         return None
     return contractor
+
+
+def change_password(
+    conn: sqlite3.Connection,
+    contractor_id: int,
+    current_password: str,
+    new_password: str,
+) -> None:
+    """Change a contractor's password after verifying the current one."""
+    contractor = db.get_contractor(conn, contractor_id)
+    if contractor is None:
+        raise AuthError("Account not found.")
+    if not check_password_hash(contractor["password_hash"], current_password or ""):
+        raise AuthError("Your current password is incorrect.")
+    if len(new_password or "") < 6:
+        raise AuthError("New password must be at least 6 characters.")
+    db.update_password(conn, contractor_id, generate_password_hash(new_password))
+
+
+def rename(conn: sqlite3.Connection, contractor_id: int, business_name: str) -> None:
+    """Update a contractor's business name."""
+    business_name = (business_name or "").strip()
+    if not business_name:
+        raise AuthError("Business name can't be empty.")
+    db.update_contractor_name(conn, contractor_id, business_name)

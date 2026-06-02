@@ -1,20 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Sign up — PowerLeads{% endblock %}
 {% block content %}
-<section class="narrow">
-  <h1>Create your account</h1>
-  <form method="post" class="stack">
-    <label>Business name
-      <input name="business_name" value="{{ form.get('business_name', '') }}" required>
-    </label>
-    <label>Email
-      <input type="email" name="email" value="{{ form.get('email', '') }}" required>
-    </label>
-    <label>Password <small>(6+ characters)</small>
-      <input type="password" name="password" required>
-    </label>
-    <button class="btn" type="submit">Sign up</button>
-  </form>
-  <p>Already have an account? <a href="{{ url_for('main.login') }}">Log in</a>.</p>
-</section>
+<div class="narrow">
+  <div class="card" style="padding:26px">
+    <h1>Create your account</h1>
+    <p class="note">Start getting pressure washing leads in minutes.</p>
+    <form method="post" class="stack" style="margin-top:14px">
+      <label>Business name
+        <input name="business_name" value="{{ form.get('business_name', '') }}" required>
+      </label>
+      <label>Email
+        <input type="email" name="email" value="{{ form.get('email', '') }}" required>
+      </label>
+      <label>Password <small>(6+ characters)</small>
+        <input type="password" name="password" required>
+      </label>
+      <button class="btn block" type="submit">Sign up</button>
+    </form>
+    <p class="note" style="margin-top:14px">Already have an account? <a href="{{ url_for('main.login') }}">Log in</a>.</p>
+  </div>
+</div>
 {% endblock %}

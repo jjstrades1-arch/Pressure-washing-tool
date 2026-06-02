@@ -376,6 +376,45 @@ def get_contractor_by_email(conn: sqlite3.Connection, email: str) -> sqlite3.Row
     ).fetchone()
 
 
+def update_contractor_name(
+    conn: sqlite3.Connection, contractor_id: int, business_name: str
+) -> None:
+    conn.execute(
+        "UPDATE contractors SET business_name = ? WHERE id = ?",
+        (business_name, contractor_id),
+    )
+
+
+def update_password(
+    conn: sqlite3.Connection, contractor_id: int, password_hash: str
+) -> None:
+    conn.execute(
+        "UPDATE contractors SET password_hash = ? WHERE id = ?",
+        (password_hash, contractor_id),
+    )
+
+
+def pipeline_counts(conn: sqlite3.Connection, contractor_id: int) -> dict[str, int]:
+    """How many claimed leads sit in each pipeline status for a contractor."""
+    rows = conn.execute(
+        "SELECT status, COUNT(*) AS n FROM claims WHERE contractor_id = ? GROUP BY status",
+        (contractor_id,),
+    ).fetchall()
+    return {r["status"]: r["n"] for r in rows}
+
+
+def claimed_leads(conn: sqlite3.Connection, contractor_id: int) -> list[sqlite3.Row]:
+    """Every lead a contractor has in their pipeline (claim joined to lead)."""
+    return conn.execute(
+        """SELECT l.*, c.status AS claim_status, c.notes AS claim_notes,
+                  c.job_value_cents, c.updated_at AS claim_updated
+           FROM claims c JOIN leads l ON l.id = c.lead_id
+           WHERE c.contractor_id = ?
+           ORDER BY c.updated_at DESC""",
+        (contractor_id,),
+    ).fetchall()
+
+
 # --- service areas ---
 def add_service_area(
     conn: sqlite3.Connection,

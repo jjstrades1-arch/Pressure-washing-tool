@@ -169,6 +169,21 @@ unlock it, and protect them if it isn't:
   - heavy reporters trip a per-period cap and go to owner review;
   - a lead two contractors flag is automatically pulled from circulation.
 
+### The web app (revamped)
+
+A modern, responsive interface with **light & dark mode**:
+
+- **Leads dashboard** with KPI tiles (leads available, unlocked this month, deals
+  in pipeline, jobs won), instant **search**, **category filter**, **sort**
+  (best / nearest / newest), and status chips.
+- **Pipeline board** — a CRM view of your claimed leads grouped by stage
+  (new → contacted → quoted → won), with job values.
+- **Lead page** with one-tap **call** / **email** buttons, an embedded **map**,
+  copy-to-clipboard call scripts & email templates, a visual pipeline stepper,
+  and the bad-lead report box.
+- **Account page** — rename your business, change password, view/cancel your plan.
+- **Onboarding checklist** so new contractors know exactly what to do first.
+
 ### What a subscriber experiences
 
 - **Instant leads.** Adding a service area kicks off a background scan (free

@@ -1,32 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Plans — PowerLeads{% endblock %}
 {% block content %}
-<h1>Choose a plan</h1>
-{% if current %}
-  <p class="note">You're currently on <strong>{{ current['plan_name'] }}</strong>.</p>
-{% endif %}
+<h1 class="center">Choose a plan</h1>
+{% if current %}<p class="note center">You're currently on <strong>{{ current['plan_name'] }}</strong>.</p>
+{% else %}<p class="note center">Month-to-month · cancel anytime · every bad lead credited back.</p>{% endif %}
+
 <div class="cards">
   {% for p in plans %}
-    <div class="card {% if current and current['plan_id'] == p['id'] %}active{% endif %}">
+    <div class="card {{ 'featured' if loop.index == 2 }}" style="padding:22px">
+      {% if current and current['plan_id'] == p['id'] %}<p class="eyebrow">Your plan</p>
+      {% elif loop.index == 2 %}<p class="eyebrow">Most popular</p>{% endif %}
       <h3>{{ p['name'] }}</h3>
       <p class="price">{{ p['price_monthly_cents'] | money }}<span>/mo</span></p>
-      <ul>
+      <ul class="plan-list">
         <li>{{ p['radius_km'] | round(0, 'floor') | int }} km service radius</li>
         <li>Up to {{ p['max_areas'] }} service area(s)</li>
         <li>{{ p['monthly_lead_cap'] }} leads / month</li>
         <li>{{ p['exclusivity'] | capitalize }} leads</li>
+        <li>Credit-back guarantee</li>
       </ul>
       {% if session.get('contractor_id') %}
         <form method="post" action="{{ url_for('main.subscribe', plan_id=p['id']) }}">
-          <button class="btn small" type="submit">
+          <button class="btn block {{ '' if loop.index == 2 else 'ghost' }}" type="submit">
             {% if current and current['plan_id'] == p['id'] %}Current plan{% else %}Subscribe{% endif %}
           </button>
         </form>
       {% else %}
-        <a class="btn small" href="{{ url_for('main.signup') }}">Sign up</a>
+        <a class="btn block {{ '' if loop.index == 2 else 'ghost' }}" href="{{ url_for('main.signup') }}">Sign up</a>
       {% endif %}
     </div>
   {% endfor %}
 </div>
-<p class="note">Payments are simulated in this version — subscribing activates instantly with no charge.</p>
+<p class="note center" style="margin-top:18px">Payments are simulated in this version — subscribing activates instantly with no charge.</p>
 {% endblock %}
